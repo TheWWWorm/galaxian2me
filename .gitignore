@@ -1,0 +1,5 @@
+.godot/
+*.import
+game/.godot/
+builds/
+*.tmp

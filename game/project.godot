@@ -1,0 +1,42 @@
+; Engine configuration file.
+config_version=5
+
+[application]
+config/name="Galaxy on Fire 2 — J2ME Remake Engine"
+config/description="Native engine for the J2ME Galaxy on Fire 2 using content imported from a supplied JAR."
+config/version="0.1.0"
+run/main_scene="res://scenes/main.tscn"
+config/use_custom_user_dir=true
+config/custom_user_dir_name="gof2-j2me-remake"
+config/features=PackedStringArray("4.7", "GL Compatibility")
+config/icon="res://icon.svg"
+boot_splash/show_image=false
+
+[display]
+window/size/viewport_width=1280
+window/size/viewport_height=800
+window/size/min_width=640
+window/size/min_height=400
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/handheld/orientation=6
+
+[input_devices]
+pointing/emulate_mouse_from_touch=true
+
+[physics]
+common/physics_interpolation=true
+
+[rendering]
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/vram_compression/import_etc2_astc=true
+anti_aliasing/quality/msaa_3d=2
+environment/defaults/default_clear_color=Color(0, 0, 0, 1)
+
+[shader_globals]
+
+gof_light_direction={
+"type": "vec3",
+"value": Vector3(0.277, -0.959, 0)
+}
