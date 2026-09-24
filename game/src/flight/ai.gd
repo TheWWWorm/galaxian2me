@@ -92,6 +92,8 @@ static func _choose_target(space, b) -> void:
 	b.ai.target = near[space.rng.randi_range(0, near.size() - 1)]
 
 static func _enemies(a, b) -> bool:
+	# Ships on the player's side and ships out for the player are at war.
+	if (a.hostile and b.friendly) or (a.friendly and b.hostile): return true
 	if a.faction == b.faction: return false
 	if a.faction == 8 or b.faction == 8: return true
 	if a.faction == 9 or b.faction == 9: return true

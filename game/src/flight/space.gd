@@ -13,6 +13,7 @@ const JavaRandom := preload("res://src/simulation/java_random.gd")
 const AI := preload("res://src/flight/ai.gd")
 const Backdrop := preload("res://src/presentation/backdrop.gd")
 const Story := preload("res://src/flight/story.gd")
+const Mining := preload("res://src/flight/mining.gd")
 
 signal event(kind: String, data: Dictionary)
 
@@ -60,6 +61,8 @@ var in_void := false
 var shots_fired := 0
 var kills := 0
 var story: Story = null
+var mining: Mining = null
+var mining_target: Body = null
 
 func _init(owner) -> void:
 	game = owner
@@ -427,7 +430,9 @@ func step(delta: float, input: Dictionary) -> void:
 		if story.controls_locked:
 			input = {"yaw": 0.0, "pitch": 0.0}
 	if input.get("autopilot", false): autopilot = not autopilot
-	if player.alive:
+	if mining_target != null:
+		_mining_step(delta, ms, input)
+	elif player.alive:
 		_fly_player(delta, ms, input)
 		_player_weapons_step(ms, input)
 		_targeting(ms, input)
@@ -710,7 +715,9 @@ func _destroyed(b: Body, source: Body) -> void:
 		kills += 1
 		game.session.add_stat("kills")
 		if b.faction == 8: game.session.add_stat("pirates")
-	if not b.cargo.is_empty():
+	elif source != null and bool(source.ai.get("rival", false)):
+		stats["rival_kills"] = int(stats.get("rival_kills", 0)) + 1
+	if not b.cargo.is_empty() and not bool(b.ai.get("no_drop", false)):
 		_drop(b.pos, int(b.cargo[0]), int(b.cargo[1]), "box")
 	b.dead_timer = 1.0
 	event.emit("killed", {"body": b})
@@ -719,8 +726,9 @@ func _break_asteroid(a: Body) -> void:
 	a.alive = false
 	effects.append({"kind": "asteroid", "pos": a.pos, "time": 0.0, "life": 1.6, "scale": a.scale.x})
 	event.emit("sound", {"name": "fx_explosion_03"})
-	# Ore chunks now and then; class A cores more often.
-	if a.ore != 164:
+	# Ore chunks now and then; class A cores more often. A mined-out
+	# asteroid leaves nothing.
+	if a.ore >= 154 and a.ore != 164:
 		if a.ore_class == 7 and rng.randi_range(0, 99) < 40:
 			_drop(a.pos, a.ore + 11, 1, "asteroid")
 		elif a.ore_class < 7 and rng.randi_range(0, 99) < 20:
@@ -767,6 +775,10 @@ func _collisions() -> void:
 			Body.Kind.GATE:
 				if player.pos.distance_to(b.pos) < GATE_ZONE and target == b:
 					_use_gate()
+			Body.Kind.SHIP, Body.Kind.FREIGHTER:
+				# A ship disabled by EMP can be looted until it recovers.
+				if b.disabled and not b.cargo.is_empty() and player.pos.distance_to(b.pos) < 3000.0 + _tractor_reach():
+					_loot(b)
 
 func _tractor_reach() -> float:
 	return 6000.0 if game.session.has_equipped_type(Catalogue.Type.TRACTOR_BEAM) else 0.0
@@ -782,6 +794,20 @@ func _collect(l: Body) -> void:
 	game.session.add_cargo(item, count)
 	game.session.add_stat("cargo_salvaged", count)
 	l.alive = false
+	event.emit("message", {"text": lib.format(261, {"#Q": str(count), "#N": cat.item_name(item)})})
+	event.emit("sound", {"name": "fx_message_03"})
+
+func _loot(b: Body) -> void:
+	var item: int = b.cargo[0]
+	var count: int = mini(int(b.cargo[1]), game.session.cargo_free())
+	if count <= 0:
+		event.emit("message", {"text": lib.text(159)})
+		return
+	game.session.add_cargo(item, count)
+	game.session.add_stat("cargo_salvaged", count)
+	stats["collected"] = int(stats.get("collected", 0)) + count
+	b.cargo = []
+	if b.faction >= 0 and b.faction <= 3: game.reputation_hit(b.faction, false)
 	event.emit("message", {"text": lib.format(261, {"#Q": str(count), "#N": cat.item_name(item)})})
 	event.emit("sound", {"name": "fx_message_03"})
 
@@ -825,7 +851,72 @@ func _act_on_target() -> void:
 			game.destination = {"station": travel_station}
 			event.emit("sound", {"name": "fx_boost_02"})
 		Body.Kind.ASTEROID:
-			event.emit("mine", {"asteroid": target})
+			_begin_mining(target)
+
+# ------------------------------------------------------------------ mining
+
+func _begin_mining(a: Body) -> void:
+	var laser: Dictionary = game.session.equipped_of_type(Catalogue.Type.MINING_LASER)
+	if laser.is_empty():
+		event.emit("message", {"text": lib.text(265)})
+		return
+	if game.session.cargo_free() <= 0:
+		event.emit("message", {"text": lib.text(159)})
+		return
+	if a.ore < 0:
+		event.emit("message", {"text": lib.text(266)})
+		return
+	mining_target = a
+	mining = null
+	autopilot = false
+	event.emit("message", {"text": lib.text(296)})
+
+## Flies up to the asteroid, then runs the drill until it is through or wrecked.
+func _mining_step(delta: float, ms: int, input: Dictionary) -> void:
+	var a: Body = mining_target
+	if not a.alive:
+		mining_target = null
+		mining = null
+		return
+	var reach: float = 1500.0 * (a.scale.x + a.scale.y + a.scale.z) / 2.0 + PLAYER_RADIUS
+	if mining == null:
+		var steer := _steer_towards(player, a.pos)
+		var rate := 1.5
+		player.basis = player.basis.rotated(player.basis.y, -steer.x * rate * delta)
+		player.basis = player.basis.rotated(player.basis.x, -steer.y * rate * delta).orthonormalized()
+		if player.pos.distance_to(a.pos) > reach:
+			player.pos += player.forward() * PLAYER_SPEED * ms
+			return
+		var laser: Dictionary = game.session.equipped_of_type(Catalogue.Type.MINING_LASER)
+		mining = Mining.new(a.ore_class, a.ore, int(laser.id), cat)
+		event.emit("sound", {"name": "fx_mining_05"})
+		return
+	var yaw: float = input.get("yaw", 0.0)
+	if mining.step(ms, yaw < -0.3, yaw > 0.3): return
+	_finish_mining()
+
+func _finish_mining() -> void:
+	var a: Body = mining_target
+	var s = game.session
+	var amount: int = mini(s.cargo_free(), int(mining.tons))
+	if mining.core_found() and s.cargo_free() > 0:
+		var core: int = a.ore - 154 + 165
+		s.add_cargo(core, 1)
+		s.add_stat("cores_mined")
+		event.emit("message", {"text": lib.format(261, {"#Q": "1", "#N": cat.item_name(core)})})
+		amount = mini(amount, s.cargo_free())
+	if amount > 0:
+		s.add_cargo(a.ore, amount)
+		s.add_stat("ore_mined", amount)
+		event.emit("message", {"text": lib.format(262, {"#Q": str(amount), "#N": cat.item_name(a.ore)})})
+	else:
+		event.emit("message", {"text": lib.text(263)})
+	if s.cargo_free() <= 0: event.emit("message", {"text": lib.text(319), "time": 5.0})
+	# A mined asteroid is spent and breaks up.
+	a.ore = -1
+	_break_asteroid(a)
+	mining_target = null
+	mining = null
 
 # ------------------------------------------------------------------ targeting
 

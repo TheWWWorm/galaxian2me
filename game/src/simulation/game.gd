@@ -7,6 +7,7 @@ const Catalogue := preload("res://src/content/catalogue.gd")
 const Session := preload("res://src/simulation/session.gd")
 const Market := preload("res://src/simulation/market.gd")
 const Campaign := preload("res://src/simulation/campaign.gd")
+const Lounge := preload("res://src/simulation/lounge.gd")
 
 ## New-game constants of the original: first station, the hull Keith flies
 ## and what is mounted on it.
@@ -28,6 +29,7 @@ var cat: Catalogue
 var session: Session
 var market: Market
 var campaign: Campaign
+var bar: Lounge
 
 func _init(lib, catalogue: Catalogue) -> void:
 	library = lib
@@ -36,6 +38,7 @@ func _init(lib, catalogue: Catalogue) -> void:
 	session.content_id = lib.id
 	market = Market.new(cat)
 	campaign = Campaign.new(self)
+	bar = Lounge.new(self)
 
 func new_game() -> void:
 	var s := session
@@ -81,6 +84,9 @@ func arrive(station_id: int, fresh := true) -> void:
 		m = {"station": station_id,
 			"items": market.generate_stock(station_id, session.story_step),
 			"ships": market.generate_ships(station_id, session.story_step, bool(session.flags.get("all_gold", false)))}
+	# The lounge changes with every visit.
+	if fresh or not m.has("lounge"):
+		m.lounge = bar.generate(station_id)
 	session.remember_market(m)
 	changed.emit()
 
@@ -116,6 +122,8 @@ func buy(id: int, count := 1) -> String:
 func sell(id: int, count := 1) -> String:
 	count = mini(count, session.cargo_count(id))
 	if count <= 0: return library.text(160)
+	# Freight carried for a client is not the player's to sell.
+	if id == Lounge.COURIER_FREIGHT and int(session.job.get("kind", -1)) == 0: return library.text(160)
 	var p := price_here(id)
 	session.credits += p * count
 	session.add_cargo(id, -count)
@@ -225,16 +233,47 @@ func lounge() -> Array:
 
 func accept_job(index: int) -> String:
 	var people := lounge()
-	if index < 0 or index >= people.size() or not people[index].has("job"): return ""
-	if not session.job.is_empty(): return library.text(254)
-	session.job = people[index].job.duplicate(true)
-	people[index].erase("job")
+	if index < 0 or index >= people.size(): return ""
+	var error: String = bar.accept(people[index])
 	changed.emit()
-	return ""
+	return error
 
 func cancel_job() -> void:
+	# Abandoning a job returns nothing and takes back its freight.
+	if int(session.job.get("kind", -1)) == 0:
+		session.add_cargo(Lounge.COURIER_FREIGHT, -int(session.job.get("count", 0)))
+	session.flags.erase("passengers")
 	session.job = {}
 	changed.emit()
+
+## A freelance job whose destination is this station: freight and passengers
+## are delivered, bought goods handed over, and the reward paid.
+func settle_job(station_id: int) -> void:
+	var job: Dictionary = session.job
+	if job.is_empty() or int(job.station) != station_id: return
+	var kind := int(job.kind)
+	var paid := false
+	match kind:
+		0:
+			session.add_cargo(Lounge.COURIER_FREIGHT, -int(job.count))
+			session.add_stat("goods_conveyed", int(job.count))
+			paid = true
+		11:
+			session.add_stat("passengers", int(job.count))
+			session.flags.erase("passengers")
+			paid = true
+		8:
+			if session.cargo_count(int(job.item)) >= int(job.count):
+				session.add_cargo(int(job.item), -int(job.count))
+				paid = true
+		_:
+			paid = bool(job.get("done", false))
+	if not paid: return
+	session.credits += int(job.reward)
+	session.add_stat("jobs")
+	pending_dialogue.append({"speaker": -1, "name": str(job.client), "face": job.get("face", []),
+		"text": library.text(195 + randi() % 5) + "\n\n" + library.text(97)})
+	session.job = {}
 
 # ------------------------------------------------------------------ travel
 
@@ -252,6 +291,7 @@ func dock(station_id: int) -> void:
 	if int(destination.get("station", -1)) == station_id: destination = {}
 	arrive(station_id)
 	campaign.on_dock(station_id)
+	settle_job(station_id)
 	autosave()
 
 ## Arrived at another station's space by gate or in-system travel.

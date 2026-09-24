@@ -33,7 +33,7 @@ var toast_time := 0.0
 
 func _ready() -> void:
 	game = app.game
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_build_scene()
 	_build_layout()
@@ -77,7 +77,7 @@ func _build_layout() -> void:
 	menu.add_theme_constant_override("separation", 6)
 	left.add_child(menu)
 	content = Control.new()
-	content.set_anchors_preset(Control.PRESET_FULL_RECT)
+	content.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	content.offset_left = 256; content.offset_top = 96; content.offset_right = -12; content.offset_bottom = -12
 	content.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(content)
@@ -136,8 +136,8 @@ func _show(script) -> void:
 func show_panel(p: Control) -> void:
 	if current_panel != null: current_panel.queue_free()
 	current_panel = p
-	p.set_anchors_preset(Control.PRESET_FULL_RECT)
 	content.add_child(p)
+	p.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 func close_panel() -> void:
 	if current_panel != null: current_panel.queue_free()

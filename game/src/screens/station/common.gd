@@ -51,7 +51,7 @@ static func row(icon: Control, text: String, right: String, on_press: Callable) 
 	b.custom_minimum_size.y = 38
 	b.pressed.connect(on_press)
 	var h := HBoxContainer.new()
-	h.set_anchors_preset(Control.PRESET_FULL_RECT)
+	h.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	h.offset_left = 6; h.offset_right = -8
 	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	b.add_child(h)

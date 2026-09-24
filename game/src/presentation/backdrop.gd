@@ -8,8 +8,10 @@ extends Node3D
 const Assembly := preload("res://src/presentation/assembly.gd")
 const JavaRandom := preload("res://src/simulation/java_random.gd")
 
-## Sky objects sit this far out (the original's 20000 units).
-const RADIUS := 200.0
+## Sky objects sit this far out, inside the camera's range so nearer
+## geometry hides them; sizes below are given for a radius of 200.
+const RADIUS := 3500.0
+const SIZE := RADIUS / 200.0
 ## Star sprite per planet texture, from the original's lookup table.
 var star_for_planet: Array = [5, 1, 2, 3, 0, 2, 4, 5, 4, 4, 1, 5, 2, 3, 2, 3, 2, 2, 2, 5]
 
@@ -25,7 +27,8 @@ func setup(lib, station_id: int, catalogue) -> void:
 	var system: Dictionary = catalogue.system(int(st.get("system", 0)))
 	# Skybox: the imported starfield, drawn behind everything.
 	sky = lib.instance("skybox")
-	sky.scale = Vector3.ONE * 30.0
+	var extent: float = sky.mesh.get_aabb().get_longest_axis_size() / 2.0 if sky.mesh != null else 1.0
+	sky.scale = Vector3.ONE * (RADIUS * 1.2 / maxf(0.001, extent))
 	sky.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	for i in sky.get_surface_override_material_count():
 		var m: ShaderMaterial = sky.get_surface_override_material(i).duplicate()
@@ -127,6 +130,7 @@ func _sprite(tex: Texture2D, dir: Vector3, size: float, additive: bool) -> void:
 	if tex == null: return
 	var q := MeshInstance3D.new()
 	var mesh := QuadMesh.new()
+	size *= SIZE
 	mesh.size = Vector2(size, size * tex.get_height() / float(tex.get_width()))
 	var m := StandardMaterial3D.new()
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -134,7 +138,6 @@ func _sprite(tex: Texture2D, dir: Vector3, size: float, additive: bool) -> void:
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	if additive: m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	m.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-	m.no_depth_test = true
 	m.render_priority = -90
 	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
 	m.disable_fog = true
@@ -147,7 +150,7 @@ func _sprite(tex: Texture2D, dir: Vector3, size: float, additive: bool) -> void:
 
 func _sky_shader(base: Shader) -> Shader:
 	var s := Shader.new()
-	s.code = base.code.replace("depth_draw_opaque", "depth_draw_never, depth_test_disabled")
+	s.code = base.code.replace("depth_draw_opaque", "depth_draw_never")
 	return s
 
 ## Keeps the sky centred on the camera and returns the light direction the

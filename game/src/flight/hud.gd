@@ -17,7 +17,7 @@ var pause_panel: Control
 var font: Font
 
 func _ready() -> void:
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	font = get_theme_default_font()
@@ -114,6 +114,7 @@ func _draw() -> void:
 		_draw_tex(tex, s)
 	_draw_status(size)
 	_draw_radar(size)
+	if space.mining != null: _draw_mining(size)
 	# Messages.
 	var y := 70.0
 	for m in messages:
@@ -166,6 +167,47 @@ func _draw_status(size: Vector2) -> void:
 			draw_texture_rect_region(sheet, Rect2(at, region.size * SCALE), region)
 			draw_string(font, at + Vector2(region.size.x * SCALE + 4, sheet.get_height() * SCALE - 4), "x%d" % int(w.count), HORIZONTAL_ALIGNMENT_LEFT, -1, 14, UI.TEXT)
 		break
+
+## The mining gauge as the original draws it: the rock layers stacked above
+## the background, completed layers green, the current layer filling, red
+## zones either side growing with drill damage, and the cursor.
+func _draw_mining(size: Vector2) -> void:
+	var m = space.mining
+	var bg := _tex("mining_background")
+	if bg == null: return
+	var S := SCALE * 1.5
+	var bs := bg.get_size() * S
+	var origin := Vector2(size.x / 2.0 - bs.x / 2.0, size.y * 0.72)
+	draw_texture_rect(bg, Rect2(origin - Vector2(0, bs.y), bs), false)
+	var empty := _tex("mining_green_empty")
+	var full := _tex("mining_green_complete")
+	var red := _tex("mining_redarea")
+	var cursor := _tex("mining_cursor")
+	var x50 := origin.x + 50 * S
+	if empty != null:
+		var h: float = m.layers * 7.0
+		draw_texture_rect_region(empty, Rect2(Vector2(x50, origin.y - h * S), Vector2(empty.get_width(), h) * S), Rect2(0, empty.get_height() - h, empty.get_width(), h))
+	if full != null and m.layer > 0:
+		var h2: float = m.layer * 7.0
+		draw_texture_rect_region(full, Rect2(Vector2(x50, origin.y - h2 * S), Vector2(full.get_width(), h2) * S), Rect2(0, full.get_height() - h2, full.get_width(), h2))
+	var width: int = m.WIDTHS[m.layer]
+	if full != null:
+		var part := float(m.layer_time) / float(m.layer_needed) * width
+		var row_y: float = full.get_height() - (m.layer + 1) * 7.0
+		var cx := size.x / 2.0
+		draw_texture_rect_region(full, Rect2(Vector2(cx - part * S / 2.0, origin.y - (m.layer + 1) * 7.0 * S), Vector2(part, 7) * S),
+			Rect2(full.get_width() / 2.0 - part / 2.0, row_y, part, 7))
+	var row: float = origin.y - m.layer * 7.0 * S
+	if red != null:
+		var grow: float = m.red / m.RED_LIMIT * (width + 5)
+		var left: float = origin.x + (bg.get_width() - 2 * m.MARGIN - width * 3) / 2.0 * S
+		draw_texture_rect_region(red, Rect2(Vector2(left + (width - grow) * S, row - 5 * S), Vector2(grow, 5) * S), Rect2(0, 0, grow, 5))
+		draw_texture_rect_region(red, Rect2(Vector2(left + (width * 2 + 2 * m.MARGIN) * S, row - 5 * S), Vector2(grow, 5) * S), Rect2(0, 0, grow, 5))
+	if cursor != null:
+		var cs := cursor.get_size() * S
+		draw_texture_rect(cursor, Rect2(Vector2(size.x / 2.0 + m.drill * S - cs.x / 2.0, row + 2 * S - cs.y), cs), false)
+	var label := "%d t %s" % [int(m.tons), app.catalogue.item_name(int(m.ore))]
+	draw_string(font, Vector2(size.x / 2.0 - 200, origin.y + 22), label, HORIZONTAL_ALIGNMENT_CENTER, 400, 16, UI.TEXT)
 
 ## A radio line in the original's box: the speaker's portrait on the left,
 ## the name in the header, the text beside the portrait.

@@ -47,8 +47,12 @@ func _ready() -> void:
 func _just(action: String) -> bool:
 	return Input.is_action_just_pressed(action)
 
+## Set by automated checks to drive the ship without devices.
+var scripted: Callable = Callable()
+
 ## The steering and trigger state for this frame.
 func state(view) -> Dictionary:
+	if scripted.is_valid(): return scripted.call()
 	var invert := -1.0 if bool(app.setting("controls", "invert", false)) else 1.0
 	var yaw := Input.get_axis("steer_left", "steer_right")
 	var pitch := Input.get_axis("steer_down", "steer_up") * invert

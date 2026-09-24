@@ -125,7 +125,11 @@ func advance() -> void:
 func _apply_effect(e: Dictionary) -> void:
 	var m: Dictionary = game.session.story_mission
 	if e.owner == _mission_class():
-		if e.desc == "(I)V" and e.args.size() == 1: m.target = _value(e.args[0])
+		if e.desc == "(I)V" and e.args.size() == 1:
+			m.target = _value(e.args[0])
+			if e.args[0] is Dictionary:
+				m.target_expr = e.args[0]
+				m.jobs_at_start = game.session.stat("jobs")
 		elif e.desc == "(II)V" and e.args.size() == 2:
 			m.item = int(e.args[0]); m.amount = int(e.args[1])
 		elif e.desc == "(Z)V" and e.args.size() == 1: m.visible = bool(e.args[0])
@@ -150,32 +154,109 @@ func _value(v) -> int:
 ## Docking: a story mission whose goal is met reports here. The debriefing
 ## plays, the reward is paid and the story moves on.
 func on_dock(station_id: int) -> void:
+	_station_events(station_id)
+	# Several steps can conclude in a row at one station, as in the original
+	# where the docked check runs again after each debriefing.
+	for _i in 4:
+		if not check(true, station_id): break
+		conclude()
+		_station_events(station_id)
+
+## The current story mission is done: its debriefing plays, its reward is
+## paid, and the next step begins. Returns the debriefing lines.
+func conclude() -> Array:
 	var m: Dictionary = game.session.story_mission
-	if m.is_empty() or int(m.get("station", -2)) != station_id: return
-	if not complete(m): return
 	var step: int = game.session.story_step
-	game.pending_dialogue.append_array(dialogue(step, 1))
+	var lines := dialogue(step, 1)
+	game.pending_dialogue.append_array(lines)
 	game.session.credits += int(m.get("reward", 0))
 	if not step_supported(step + 1):
 		game.session.flags["story_halted"] = true
-		return
+		game.session.story_mission = {}
+		return lines
 	advance()
+	return lines
 
-## Whether a story mission's goal is met, by its kind.
-func complete(m: Dictionary) -> bool:
+## What the original does on entering a station at particular story steps.
+## Step 1: Gunant's mining ship (hull 0 in his colours, a mining laser and a
+## scanner, no guns). Step 20: ten free EMP bombs wait on the story
+## station's shelf. Step 27: the alien remains leave the hold.
+const STEP1_SHIP := 0
+const STEP1_LIVERY := 8
+const STEP1_EQUIPMENT := [90, 81]
+const STEP20_BOMBS := 41
+const STEP27_REMAINS := 131
+
+func _station_events(station_id: int) -> void:
+	var s = game.session
+	var m: Dictionary = s.story_mission
+	match int(s.story_step):
+		1:
+			if bool(s.flags.get("step1_ship", false)): return
+			s.flags["step1_ship"] = true
+			s.ship = {"index": STEP1_SHIP, "faction": STEP1_LIVERY, "hull": 0}
+			s.equipment = [[], [], [], []]
+			s.fit_slots()
+			for i in STEP1_EQUIPMENT.size():
+				if i < s.equipment[3].size(): s.equipment[3][i] = {"id": STEP1_EQUIPMENT[i], "count": 1}
+			s.ship.hull = int(s.ship_stats().max_hull)
+		20:
+			if int(m.get("station", -1)) == station_id:
+				var shelf: Array = game.shelf()
+				shelf = shelf.filter(func(e): return int(e.id) != STEP20_BOMBS)
+				shelf.append({"id": STEP20_BOMBS, "count": 10, "price": 0})
+				game.session.market_for(station_id).items = shelf
+		27:
+			if int(m.get("station", -1)) == station_id:
+				s.add_cargo(STEP27_REMAINS, -s.cargo_count(STEP27_REMAINS))
+
+## Whether a story mission's goal is met, by its kind, as the original checks
+## it both while docked and in flight. `flight_ms` is the time spent in space
+## at the current station (arrival goals need ten seconds there).
+func check(docked: bool, station_id: int, flight_ms := 0) -> bool:
+	var m: Dictionary = game.session.story_mission
+	if m.is_empty(): return false
+	var s = game.session
+	var here: bool = int(m.get("station", -2)) == station_id
+	var target: int = _value(m.get("target", 0))
 	match int(m.get("kind", -1)):
-		KIND_DOCK:
-			return true
-		KIND_MINING:
-			var ore := 0
-			for id in range(154, 176):
-				ore += game.session.cargo_count(id)
-			return ore >= int(m.get("target", 0)) or (int(m.get("target", 0)) >= 25 and game.session.cargo_free() <= 0)
-		KIND_EQUIP:
-			return _equipped_for_combat()
-		KIND_BUY:
-			return game.session.cargo_count(int(m.get("item", -1))) >= int(m.get("amount", 0))
+		20: return not docked and here and flight_ms > 10000
+		24: return docked or (not here and flight_ms > 10000)
+		KIND_BUY: return docked and here and s.cargo_count(int(m.get("item", -1))) >= int(m.get("amount", 0))
+		0, KIND_DOCK: return docked and here
+		15:
+			for e in s.equipped_items():
+				if int(e.id) == target: return true
+			return false
+		21:
+			for e in s.equipped_items():
+				if game.cat.category(int(e.id)) == target: return true
+			return false
+		23:
+			if not docked: return false
+			for e in s.equipped_items():
+				if game.cat.type(int(e.id)) == target: return true
+			return false
+		KIND_EQUIP: return _equipped_for_combat()
+		19: return s.stat("produced") >= target
+		14: return s.stat("kills") >= target
+		13: return s.stat("jobs") >= _counter_target(m)
+		16: return s.visited_stations.size() >= target
+		KIND_MINING: return s.cargo_used() >= target
 	return bool(m.get("done", false))
+
+## Kind 13 counts freelance jobs from the moment the step began: the
+## progression stored "jobs so far + N".
+func _counter_target(m: Dictionary) -> int:
+	var raw = m.get("target_expr", null)
+	if raw is Dictionary and raw.has("expr"):
+		var e: Array = raw.expr
+		if int(e[0]) == 96 and e[2] is int: return int(m.get("jobs_at_start", 0)) + int(e[2])
+	return _value(m.get("target", 0))
+
+## Kept for callers that only ask about docking.
+func complete(m: Dictionary) -> bool:
+	return check(true, int(m.get("station", -1)))
 
 func _equipped_for_combat() -> bool:
 	var weapon := false

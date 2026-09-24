@@ -20,6 +20,7 @@ var backdrop: Backdrop
 var nodes := {}
 var shot_nodes: Array = []
 var effect_nodes := {}
+var effect_serial := 0
 var dust: MultiMeshInstance3D
 var cam_distance := 1200.0
 var shake := 0.0
@@ -36,7 +37,7 @@ func setup(owner, sim) -> void:
 	env.environment.background_mode = Environment.BG_COLOR
 	add_child(env)
 	camera.near = 1.0
-	camera.far = 5000.0
+	camera.far = 6000.0
 	# The original's 750/4096-turn view is across a portrait phone screen;
 	# on landscape screens the same framing of the ship needs it vertically.
 	camera.keep_aspect = Camera3D.KEEP_HEIGHT
@@ -55,8 +56,11 @@ func _node_for(b: Body) -> Node3D:
 	var n: Node3D = null
 	match b.kind:
 		Body.Kind.PLAYER, Body.Kind.SHIP, Body.Kind.FREIGHTER:
-			n = Assembly.ship(library, b.ship_index, _livery(b))
-			n.get_node("Boosters").visible = b.kind == Body.Kind.PLAYER and b.boosting
+			if b.ship_index < 0 and not b.model.is_empty():
+				n = Assembly.figure(library, b.model, 0)
+			else:
+				n = Assembly.ship(library, b.ship_index, _livery(b))
+				n.get_node("Boosters").visible = b.kind == Body.Kind.PLAYER and b.boosting
 		Body.Kind.STATION:
 			n = Assembly.station(library, b.station_id, b.faction)
 		Body.Kind.GATE:
@@ -204,12 +208,16 @@ func _default_shot() -> Node3D:
 func _sync_effects(_delta: float) -> void:
 	var alive := {}
 	for e in space.effects:
-		alive[e] = true
-		if not effect_nodes.has(e):
+		# Effects are keyed by a stable id: their dictionaries change every frame.
+		if not e.has("id"):
+			effect_serial += 1
+			e.id = effect_serial
+		alive[e.id] = true
+		if not effect_nodes.has(e.id):
 			var n := _effect_node(e)
 			add_child(n)
-			effect_nodes[e] = n
-		var node: Node3D = effect_nodes[e]
+			effect_nodes[e.id] = n
+		var node: Node3D = effect_nodes[e.id]
 		node.position = (e.pos as Vector3) * UNIT
 		var k: float = e.time / e.life
 		match str(e.kind):

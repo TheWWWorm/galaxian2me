@@ -19,11 +19,11 @@ var menu: VBoxContainer
 var panel_holder: Control
 
 func _ready() -> void:
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_build_scene()
 	var column := VBoxContainer.new()
-	column.set_anchors_preset(Control.PRESET_FULL_RECT)
+	column.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	column.offset_top = 24
 	column.offset_bottom = -40
 	column.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -44,7 +44,7 @@ func _ready() -> void:
 	frame.add_child(menu)
 	_fill_menu()
 	panel_holder = CenterContainer.new()
-	panel_holder.set_anchors_preset(Control.PRESET_FULL_RECT)
+	panel_holder.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	panel_holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(panel_holder)
 	var version := UI.label("%s %s" % [app.library.manifest.get("name", ""), app.library.manifest.get("version", "")], 12, UI.TEXT_DIM)
@@ -81,7 +81,7 @@ func _build_scene() -> void:
 	env.environment.background_mode = Environment.BG_COLOR
 	scene.add_child(env)
 	camera.near = 1.0
-	camera.far = 4000.0
+	camera.far = 6000.0
 	camera.keep_aspect = Camera3D.KEEP_WIDTH
 	camera.fov = 70.0
 	scene.add_child(camera)
