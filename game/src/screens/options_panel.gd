@@ -177,6 +177,7 @@ func _controls_page() -> void:
 		_slider("Mouse sensitivity", "controls", "mouse_sensitivity", 1.0, 0.3, 3.0, 0.1)
 		_toggle("Capture the pointer in flight", "controls", "capture_mouse", true)
 		_note("Moving the mouse turns the ship directly, as fast as it can turn; menus and pauses free the pointer.")
+		_toggle("Pause when the window loses focus", "controls", "pause_on_focus_loss", false)
 		var strafe_modes := ["auto", "always", "never"]
 		_choice("Left / right keys", ["Strafe while the mouse steers", "Always strafe", "Always turn"],
 			maxi(0, strafe_modes.find(str(app.setting("controls", "strafe", "auto")))),
@@ -268,6 +269,8 @@ func _interface_page() -> void:
 	box.add_child(UI.button("Show all help pop-ups again", func():
 		preload("res://src/presentation/tips.gd").reset(app)
 		_build()))
+	_toggle("Launch sequence", "interface", "launch_sequence", true)
+	_note("As in the original, each flight opens with a few seconds watching your ship leave, with the system's details and a tip. A key, click or tap skips it.")
 	_toggle("Radar scope", "interface", "radar_scope", true)
 	_note("A round radar in a corner of the flight display. Not part of the original, which marks ships only on screen and at its edges.")
 	_toggle("Object labels", "interface", "labels", true)

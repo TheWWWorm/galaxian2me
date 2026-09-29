@@ -122,6 +122,17 @@ func _screen(p: Vector3) -> Variant:
 	if cam.to_local(world).z >= -cam.near: return null
 	return cam.unproject_position(world)
 
+## Where the guns point on screen. The original projects the point five
+## (4096-scaled) direction lengths ahead of the ship, or of the turret, so
+## the crosshair sits on the line of fire rather than at the screen centre,
+## which the chase camera aims above the ship.
+func aim_point(fallback: Vector2) -> Vector2:
+	if view == null or space.player == null: return fallback
+	var p = space.player
+	var origin: Vector3 = p.pos + p.basis * Vector3(0, 900, 0) if space.turret_mode else p.pos
+	var at = _screen(origin + space.aim_direction() * 5.0 * 4096.0)
+	return at if at != null else fallback
+
 func countdown_remaining_ms() -> int:
 	if space == null or space.story == null: return -1
 	var remaining: int = space.story.probe_remaining_ms()
@@ -159,6 +170,9 @@ func _draw() -> void:
 	if space.using_jump_drive and space.jumping >= 0: return
 	var size := get_viewport_rect().size
 	k = clampf(minf(size.x, size.y) / 800.0 * 0.85, 0.72, 1.4) * Prefs.hud_scale(app)
+	if space.starting():
+		_draw_start(size)
+		return
 	self_modulate.a = Prefs.hud_opacity(app)
 	text_layer.self_modulate.a = self_modulate.a
 	var colours: Dictionary = Prefs.palette(app)
@@ -186,7 +200,7 @@ func _draw() -> void:
 		if story.hud_hidden: return
 	# Looking around moves the view off the ship's line of fire.
 	if view == null or (absf(view.look_yaw) < 0.15 and absf(view.look_pitch) < 0.15):
-		_draw_tex("hud_crosshair_png24", centre)
+		_draw_tex("hud_crosshair_png24", aim_point(centre))
 	_draw_hits(centre)
 	_draw_hull_alarm(size)
 	_draw_markers(size)
@@ -223,6 +237,9 @@ func _draw() -> void:
 		if space.time_scale > 1: pilot += "  ×%d" % space.time_scale
 		elif not touch_layout and space.time_warp_allowed(): pilot += "  ·  %s: faster" % Prefs.key_name("time_warp")
 		_centered(Vector2(size.x / 2.0, centre.y + 64 * k), pilot, 12, FRIEND, true)
+	var hint := action_hint() if bool(app.setting("interface", "hints", true)) else ""
+	if not hint.is_empty():
+		_centered(aim_point(centre) + Vector2(0, 42 * k), hint, 12, Color(UI.TEXT, 0.9), true)
 	if bool(app.setting("interface", "hints", true)) and not touch_layout and space.target == null:
 		var four: Array = ["steer_up", "steer_left", "steer_down", "steer_right"].map(func(a): return Prefs.key_name(a))
 		var keys_text: String = "/".join(four)
@@ -380,6 +397,36 @@ func _draw_readouts() -> void:
 func original_style() -> bool:
 	return str(app.setting("interface", "hud_style", "original")) == "original"
 
+## The original's start sequence: the orbit information at the top left
+## (faction emblem, station, system and its safety) and one of the loading
+## tips in a box along the bottom; no other HUD.
+func _draw_start(size: Vector2) -> void:
+	var s = app.game.session
+	var cat = app.catalogue
+	var sys: Dictionary = cat.system(s.system_index)
+	var x := float(MARGIN)
+	var y := float(MARGIN)
+	var logo := _tex("logo_%d" % int(sys.get("faction", 0)))
+	if logo != null:
+		var e := logo.get_size() * 1.5 * k
+		draw_texture_rect(logo, Rect2(Vector2(x, y), e), false)
+		x += e.x + 10 * k
+	var line := 20.0 * k
+	_text(Vector2(x, y + line * 0.8), str(space.station.name) if space.station != null else "", 16, UI.TEXT, 400 * k)
+	_text(Vector2(x, y + line * 1.8), "%s %s" % [cat.system_name(s.system_index), app.library.text(41)], 13, UI.TEXT_DIM, 400 * k)
+	var safety := clampi(int(sys.get("safety", 0)), 0, 3)
+	_text(Vector2(x, y + line * 2.8), "%s: %s" % [app.library.text(220), app.library.text(225 + safety)], 13, UI.TEXT_DIM, 400 * k)
+	if space.start_tip < 0: return
+	var font := get_theme_default_font()
+	var fs := int(14 * k)
+	var w := minf(size.x - 2.0 * MARGIN, 900 * k)
+	var tip: String = app.library.text(space.start_tip)
+	var text_h := font.get_multiline_string_size(tip, HORIZONTAL_ALIGNMENT_LEFT, w - 24 * k, fs).y
+	var box := Rect2(Vector2((size.x - w) / 2.0, size.y - MARGIN - text_h - 44 * k), Vector2(w, text_h + 44 * k))
+	_plate(box)
+	_text(Vector2(box.position.x + 12 * k, box.position.y + 20 * k), app.library.text(277), 14, UI.TEXT, w - 24 * k)
+	draw_multiline_string(font, box.position + Vector2(12 * k, 36 * k + fs * 0.8), tip, HORIZONTAL_ALIGNMENT_LEFT, w - 24 * k, fs, -1, UI.TEXT_DIM)
+
 func _draw_original(size: Vector2) -> void:
 	var p: Body = space.player
 	var s = app.game.session
@@ -458,6 +505,7 @@ func _draw_original(size: Vector2) -> void:
 		if ship != null: draw_texture_rect(ship, Rect2(Vector2(size.x / 2.0 - 4.0 * S - ship.get_width() * S, base_y - ship.get_height() * S), ship.get_size() * S), false)
 		_text(Vector2(size.x / 2.0, base_y), "%d%%" % percent, 14, UI.TEXT)
 	if space.turret_mode: _centered(Vector2(size.x / 2.0, size.y - ll_size.y - 8.0 * S), "TURRET VIEW", 11, FRIEND, true)
+	_draw_current_lock(size, S)
 	_draw_readouts()
 
 ## A texture at `at` and its mirror image against the screen's right edge.
@@ -619,6 +667,73 @@ func _draw_weapons(size: Vector2) -> void:
 		var ready := 1.0 - float(secondary.cooldown) / maxf(1.0, float(secondary.reload))
 		_gauge(Vector2(r.end.x - 82 * k, y - 8 * k), 70 * k, ready if ammo > 0 else 0.0, ARMOR_COLOR, 8)
 
+## The original marks an asteroid at the crosshair rather than on the rock:
+## the scan animation runs there once the rock has been held for half a
+## second, and once locked its last full frame blinks.
+func _draw_asteroid_lock(size: Vector2) -> void:
+	if space.mining != null or not space.tractor_status().is_empty(): return
+	var sheet := _tex("hud_scanprocess_anim_png24")
+	if sheet == null: return
+	var cell := sheet.get_height()
+	var frames := maxi(2, sheet.get_width() / cell)
+	var at := aim_point(size / 2.0)
+	var frame := -1
+	if space.locked:
+		if _quick_clock_high(): frame = frames - 2
+	elif space.lock_time > 500.0:
+		frame = int((frames - 1) * (space.lock_time - 500.0) / maxf(1.0, space.lock_needed - 500.0))
+		if frame >= frames - 1: frame = -1
+	if frame >= 0: _draw_region("hud_scanprocess_anim_png24", Rect2(frame * cell, 0, cell, cell), at)
+
+## The original's quick blink: on for the second half of every 600 ms.
+func _quick_clock_high() -> bool:
+	return Time.get_ticks_msec() % 600 >= 300
+
+## The original's current lock at the bottom right of its HUD: an asteroid's
+## ore, class and name; a ship's race, name and hull; a station's name.
+func _draw_current_lock(size: Vector2, S: float) -> void:
+	var t: Body = space.target
+	if t == null or not t.alive or not space.locked: return
+	var right := size.x - 2.0 * S
+	var base := size.y - _px(14) - 2.0 * S
+	var label := ""
+	if t.kind == Body.Kind.ASTEROID:
+		var classes := _tex("hud_meteor_class")
+		if classes != null:
+			var c := 11.0
+			var frame := clampi(7 - int(t.ore_class), 0, int(classes.get_width() / c) - 1)
+			draw_texture_rect_region(classes, Rect2(Vector2(right - c * S, size.y - 2.0 * S - c * S), Vector2(c, c) * S), Rect2(frame * c, 0, c, c))
+			right -= (c + 2.0) * S
+		var items := _tex("items")
+		if items != null and t.ore >= 0:
+			var cw := items.get_width() / float(maxi(1, app.library.data.items.size()))
+			var region := Rect2(int(t.ore) * cw, 0, cw, items.get_height())
+			draw_texture_rect_region(items, Rect2(Vector2(size.x - 2.0 * S - region.size.x * S, base - region.size.y * S), region.size * S), region)
+		label = app.catalogue.item_name(int(t.ore))
+	elif t.is_ship():
+		label = (t.name if not t.name.is_empty() else app.library.text(270)) + " %d%%" % int(100.0 * t.hull / maxf(1.0, float(t.hull_max)))
+	elif t.kind != Body.Kind.STAR:
+		label = t.name
+	if not label.is_empty():
+		_string(Vector2(right - 400.0, base + _px(12)), label, HORIZONTAL_ALIGNMENT_RIGHT, 400.0, _px(12), UI.TEXT)
+
+## What the fire button does to the locked station, gate or asteroid, or
+## that holding it in the crosshair locks it; empty when nothing applies.
+func action_hint() -> String:
+	var t: Body = space.target
+	if t == null or not t.alive or t.is_ship() or space.autopilot or space.mining != null: return ""
+	if not space.locked:
+		return "Hold it in the crosshair to lock on" if t.kind != Body.Kind.STAR else ""
+	var what := ""
+	match t.kind:
+		Body.Kind.STATION: what = "fly in and dock"
+		Body.Kind.GATE: what = "fly into the gate"
+		Body.Kind.WORMHOLE: what = "fly into the wormhole" if t.visible else ""
+		Body.Kind.ASTEROID: what = "mine"
+	if what.is_empty(): return ""
+	var press := "Fire" if touch_layout else "%s / left click / RT" % Prefs.key_name("fire")
+	return "%s: %s" % [press, what]
+
 ## Bottom centre: the locked or selected object.
 func _draw_target(size: Vector2) -> void:
 	var t: Body = space.target
@@ -748,6 +863,7 @@ func _draw_markers(size: Vector2) -> void:
 				var spot = _screen(b.pos)
 				if spot != null and Rect2(Vector2.ZERO, size).has_point(spot): _draw_tex("bracket_box", spot)
 			continue
+		if b.kind == Body.Kind.ASTEROID and b == t: _draw_asteroid_lock(size)
 		if b.kind in [Body.Kind.ARRIVAL, Body.Kind.ASTEROID]: continue
 		var is_target: bool = b == t
 		var on_course: bool = b == course and not is_target

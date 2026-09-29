@@ -19,6 +19,8 @@ func _ready() -> void:
 	settings.set_value("controls", "touch", "on")
 	# Checks drive the screens directly; first-time help would interrupt them.
 	settings.set_value("interface", "help_popups", false)
+	# Nor would the seven-second launch shot; a check can turn it back on.
+	settings.set_value("interface", "launch_sequence", false)
 	settings.set_value("controls", "mouse", false)
 	settings.set_value("audio", "music_on", false)
 	settings.set_value("audio", "sound_on", false)

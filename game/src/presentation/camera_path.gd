@@ -42,6 +42,7 @@ func sample(ms: float) -> Dictionary:
 	var v: Array = []
 	for k in 7:
 		v.append(h00 * float(keys[seg][k + 1]) + h10 * tangents[seg][k] + h01 * float(keys[seg + 1][k + 1]) + h11 * tangents[seg + 1][k])
-	var basis := Assembly.basis(int(v[3]), int(v[4]), int(v[5]))
+	# Fractions of a unit kept: whole 4096ths step visibly on a slow orbit.
+	var basis := Assembly.basis(float(v[3]), float(v[4]), float(v[5]))
 	return {"transform": Transform3D(basis, Assembly.position([v[0], v[1], v[2]])),
 		"fov": clampf(v[6] / 4096.0 * 360.0, 20.0, 120.0)}

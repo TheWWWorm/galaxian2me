@@ -33,6 +33,7 @@ func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	space = Space.new(game)
+	space.start_sequence = bool(app.setting("interface", "launch_sequence", true))
 	space.build()
 	view = SpaceView.new()
 	view.setup(app, space)
@@ -176,13 +177,20 @@ func _on_joy_connection(_pad: int, connected: bool) -> void:
 	if not connected and is_inside_tree() and not paused: set_paused(true)
 
 func _notification(what: int) -> void:
-	if what == NOTIFICATION_WM_WINDOW_FOCUS_OUT and is_node_ready():
+	if not is_node_ready(): return
+	# Switching windows (a screenshot tool, say) only lets go of held keys;
+	# pausing then is an option. A phone putting the game away always pauses.
+	if what == NOTIFICATION_WM_WINDOW_FOCUS_OUT:
+		controls.reset()
+		if bool(app.setting("controls", "pause_on_focus_loss", false)): set_paused(true)
+	elif what == NOTIFICATION_APPLICATION_PAUSED:
 		set_paused(true)
 
 var story_poll := 0.0
 var tip_poll := 0.0
 const Tips := preload("res://src/presentation/tips.gd")
 var flight_ms := 0
+var ms_carry := 0.0
 
 func _physics_process(delta: float) -> void:
 	if paused: return
@@ -208,10 +216,21 @@ func _physics_process(delta: float) -> void:
 	if space.time_scale > 1:
 		if space.time_warp_allowed() and conversation == null: steps = space.time_scale
 		else: space.time_scale = 1
+	# The view draws between the poses before and after this tick.
+	space.restore_poses()
+	for b in space.bodies:
+		b.prev_pos = b.pos
+		b.prev_basis = b.basis
+	# The simulation counts whole milliseconds; carry the fraction over so
+	# game time keeps pace with real time (60 Hz is 16.67 ms, not 16).
+	ms_carry += delta * 1000.0
+	var tick := int(ms_carry)
+	ms_carry -= tick
+	var step_delta := (float(tick) + 0.01) / 1000.0
 	for i in steps:
-		game.session.playtime_ms += int(delta * 1000.0)
-		flight_ms += int(delta * 1000.0)
-		space.step(delta, input if i == 0 else {"yaw": 0.0, "pitch": 0.0})
+		game.session.playtime_ms += tick
+		flight_ms += tick
+		space.step(step_delta, input if i == 0 else {"yaw": 0.0, "pitch": 0.0})
 		if app.screen != self or is_queued_for_deletion() or defeated or paused: return
 		if i > 0 and not space.time_warp_allowed():
 			space.time_scale = 1
@@ -519,6 +538,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 		return
 	var click: bool = event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT
+	var tap: bool = event is InputEventScreenTouch and event.pressed
+	if space.starting() and not paused and (event.is_action_pressed("ui_accept") or click or tap):
+		space.skip_start()
+		get_viewport().set_input_as_handled()
+		return
 	var cinematic: bool = space.story != null and space.story.controls_locked
 	if (event.is_action_pressed("ui_accept") or click and cinematic) and not paused and space.story != null:
 		_next_radio()

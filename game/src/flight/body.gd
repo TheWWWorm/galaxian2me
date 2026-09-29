@@ -9,6 +9,10 @@ var kind := Kind.SHIP
 var name := ""
 var pos := Vector3.ZERO
 var basis := Basis.IDENTITY
+## The pose before the last simulation tick (null until one has run); the
+## view draws between it and the current one at the display's own rate.
+var prev_pos = null
+var prev_basis := Basis.IDENTITY
 var velocity := Vector3.ZERO
 ## Collision/hit half-extent, as the original's box tests use.
 var radius := 2000.0

@@ -56,7 +56,7 @@ func _process(delta: float) -> void:
 	# The original turns the rig slowly by itself; left/right take over.
 	angle += delta * 1000.0 / 6.0 + spin * delta * 1000.0
 	spin *= pow(0.1, delta)
-	pivot.transform.basis = Assembly.basis(0, int(angle) % 4096, 0)
+	pivot.transform.basis = Assembly.basis(0, fmod(angle, 4096.0), 0)
 
 func nudge(direction: float) -> void:
 	spin = clampf(spin + direction * 2.0, -3.0, 3.0)

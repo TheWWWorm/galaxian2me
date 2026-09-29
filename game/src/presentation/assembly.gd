@@ -9,7 +9,7 @@ const UNIT := Library.UNIT
 
 ## Original rotation (Rx·Ry·Rz, 4096 per turn). The original's axes match
 ## Godot's, so the matrix is used as it is.
-static func basis(rx: int, ry: int, rz: int) -> Basis:
+static func basis(rx: float, ry: float, rz: float) -> Basis:
 	var ax := rx * TAU / 4096.0
 	var ay := ry * TAU / 4096.0
 	var az := rz * TAU / 4096.0

@@ -72,7 +72,7 @@ const WARP_CLEARANCE := 25000.0
 ## autopilot flies, with no hostile near and nothing staged.
 func time_warp_allowed() -> bool:
 	if not autopilot or not player.alive or docking >= 0 or jumping >= 0 or using_jump_drive: return false
-	if mining_target != null or portal_arriving(): return false
+	if mining_target != null or portal_arriving() or starting(): return false
 	if story != null and (story.controls_locked or story.hud_hidden): return false
 	for h in hostiles():
 		if h.pos.distance_to(player.pos) < WARP_CLEARANCE: return false
@@ -116,6 +116,17 @@ var portal_crossed := false
 ## it also exists when the current mission has no scripted Story scene.
 const PORTAL_ARRIVAL_MS := 7000
 var portal_arrival_ms := -1
+## The original's start sequence (LevelScript, every area after the opening):
+## for seven seconds the camera holds where the chase camera begins and
+## watches the ship fly off. Controls and collisions wait meanwhile, and
+## the orbit information and a tip take the HUD's place.
+const START_MS := 7000
+var start_ms := -1
+## Whether areas open with it (the flight screen sets this from Options).
+var start_sequence := false
+var start_camera := Vector3.ZERO
+## The tip shown during it (one of the original's loading tips).
+var start_tip := -1
 var portal_arrival_camera := Vector3.ZERO
 var void_regeneration_ms := 0
 var fallen_voids: Array = []
@@ -262,6 +273,11 @@ func build() -> void:
 	story = Story.new(self)
 	if not story.setup(): story = null
 	Wingmen.spawn(self)
+	if start_sequence and s.story_step > 1 and not in_void and not (entry_mode in ["wormhole", "drive", "void_resume"]) \
+			and (story == null or (story.camera_mode == "chase" and not story.controls_locked)):
+		start_ms = 0
+		start_camera = player.pos + player.basis * Vector3(0, 700, -2000)
+		start_tip = START_TIPS[rng.randi_range(0, START_TIPS.size() - 1)]
 
 func _void_arrival_coordinate() -> float:
 	return float(rng.randi_range(50000, 99999)) * (1.0 if rng.randi_range(0, 1) == 0 else -1.0)
@@ -756,6 +772,16 @@ func _begin_portal_arrival() -> void:
 	var yaw := atan2(player.forward().x, player.forward().z)
 	portal_arrival_camera = player.pos + Basis(Vector3.UP, yaw) * offset
 
+## GameText.tips: the texts the original's loading screen picks from.
+const START_TIPS := [165, 166, 167, 168, 169, 169, 170, 171, 172, 173, 174, 175, 176, 177]
+
+func starting() -> bool:
+	return start_ms >= 0 and start_ms <= START_MS
+
+## Ends the start sequence early (a key, click or tap, as for the story's shots).
+func skip_start() -> void:
+	if starting(): start_ms = START_MS + 1
+
 func portal_arriving() -> bool:
 	return portal_arrival_ms >= 0 and portal_arrival_ms <= PORTAL_ARRIVAL_MS
 
@@ -767,7 +793,33 @@ func _step_portal_arrival(ms: int) -> void:
 
 # ------------------------------------------------------------------ stepping
 
+## Beyond this jump in one tick a body was placed, not flown: no blending.
+const TELEPORT := 6000.0
+var _presented: Array = []
+
+## Puts every body between its pose before the last tick and its current
+## one (`alpha` of the way) for drawing; the next step or
+## restore_poses() puts the true poses back.
+func present(alpha: float) -> void:
+	restore_poses()
+	alpha = clampf(alpha, 0.0, 1.0)
+	for b in bodies:
+		if b.prev_pos == null or (b.prev_pos as Vector3).distance_to(b.pos) > TELEPORT: continue
+		_presented.append([b, b.pos, b.basis])
+		b.pos = (b.prev_pos as Vector3).lerp(b.pos, alpha)
+		var scale: Vector3 = b.basis.get_scale()
+		var q0 := Quaternion(b.prev_basis.orthonormalized())
+		var q1 := Quaternion(b.basis.orthonormalized())
+		b.basis = Basis(q0.slerp(q1, alpha)).scaled_local(scale)
+
+func restore_poses() -> void:
+	for entry in _presented:
+		entry[0].pos = entry[1]
+		entry[0].basis = entry[2]
+	_presented.clear()
+
 func step(delta: float, input: Dictionary) -> void:
+	restore_poses()
 	if completed_flight: return
 	var ms := int(delta * 1000.0)
 	clock += ms
@@ -779,6 +831,7 @@ func step(delta: float, input: Dictionary) -> void:
 		_fly_player(delta, ms, {})
 		return
 	_step_portal_arrival(ms)
+	if starting(): start_ms += ms
 	_step_wormhole(ms)
 	_step_cloak(ms)
 	if story != null:
@@ -795,7 +848,7 @@ func step(delta: float, input: Dictionary) -> void:
 			for key in ["yaw", "pitch", "strafe", "fire", "fire_pressed", "secondary", "boost", "auto_fire", "auto_fire_toggled"]:
 				if input.has(key): fight[key] = input[key]
 			input = fight
-	if portal_arriving(): input = {"yaw": 0.0, "pitch": 0.0}
+	if portal_arriving() or starting(): input = {"yaw": 0.0, "pitch": 0.0}
 	if input.get("autopilot", false):
 		# The original's autopilot key: off when on ("Autopilot Off"); when
 		# off, towards the locked object, else the chosen destination, else
@@ -823,7 +876,7 @@ func step(delta: float, input: Dictionary) -> void:
 		_fly_player(delta, ms, input)
 		if completed_flight: return
 		_player_weapons_step(ms, input)
-		if not portal_arriving(): _targeting(ms, input)
+		if not portal_arriving() and not starting(): _targeting(ms, input)
 		_regenerate(ms)
 	for b in bodies:
 		if b == player or not b.alive: continue
@@ -1537,7 +1590,7 @@ func _drop(at: Vector3, item: int, count: int, look: String) -> void:
 # ------------------------------------------------------------------ collisions
 
 func _collisions() -> void:
-	if not player.alive or docking >= 0 or (using_jump_drive and jumping >= 0) or portal_crossed or portal_arriving(): return
+	if not player.alive or docking >= 0 or (using_jump_drive and jumping >= 0) or portal_crossed or portal_arriving() or starting(): return
 	if wormhole != null and wormhole.usable() and mining_target == null and jumping < 0 and travelling < 0:
 		if player.pos.distance_to(wormhole.pos) < Wormhole.CROSS_RADIUS:
 			# Main/o.java: abandoning the active scan through a portal is
@@ -1748,7 +1801,7 @@ func _use_gate() -> void:
 
 func navigation_locked() -> bool:
 	return (completed_flight or player == null or not player.alive or docking >= 0 or jumping >= 0
-		or travelling >= 0 or mining_target != null or portal_crossed or portal_arriving()
+		or travelling >= 0 or mining_target != null or portal_crossed or portal_arriving() or starting()
 		or (story != null and story.controls_locked))
 
 func drive_error() -> String:

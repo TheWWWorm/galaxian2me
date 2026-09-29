@@ -112,6 +112,13 @@ func _animated(model: String, frame: int) -> Node3D:
 	return Assembly.figure(library, model, frame)
 
 func sync(delta: float) -> void:
+	# The simulation ticks at a fixed rate; the display may run faster or
+	# unevenly. Bodies are drawn (and the HUD placed) between their last two
+	# poses so motion is smooth instead of stepping.
+	space.present(Engine.get_physics_interpolation_fraction())
+	_present(delta)
+
+func _present(delta: float) -> void:
 	# Billboard against this frame's camera, including the first frame after
 	# a physical crossing or a change to the source cinematic camera.
 	_camera(delta)
@@ -199,6 +206,16 @@ func _camera(delta: float) -> void:
 		cam_pos = space.drive_origin + space.drive_basis * Vector3(-2000, 300, 4000)
 		cam_started = false
 		camera.global_position = cam_pos * UNIT
+		if not cam_pos.is_equal_approx(p.pos): camera.look_at(p.pos * UNIT, p.basis.y)
+		return
+	if space.starting():
+		# The original's start: the camera stays put and watches the ship go.
+		cam_pos = space.start_camera
+		# Afterwards the chase camera starts afresh behind the ship.
+		cam_started = false
+		camera.global_position = cam_pos * UNIT
+		camera.h_offset = 0.0
+		camera.v_offset = 0.0
 		if not cam_pos.is_equal_approx(p.pos): camera.look_at(p.pos * UNIT, p.basis.y)
 		return
 	if space.portal_arriving():
