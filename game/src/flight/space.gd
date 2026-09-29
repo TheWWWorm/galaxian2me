@@ -868,6 +868,8 @@ func step(delta: float, input: Dictionary) -> void:
 			fly_to_waypoint()
 		else:
 			event.emit("autopilot_list", {})
+	elif input.get("autopilot_list", false) and not navigation_locked():
+		event.emit("autopilot_list", {})
 	if input.get("cloak", false): toggle_cloak()
 	if turret_mode and (navigation_locked() or not player.alive): turret_mode = false
 	if mining_target != null:

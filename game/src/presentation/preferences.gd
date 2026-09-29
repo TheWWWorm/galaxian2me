@@ -106,6 +106,9 @@ static func apply_display(app) -> void:
 	root.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
 	root.scaling_3d_scale = clampf(float(get_value(app, "graphics", "render_scale", 1.0)), 0.5, 1.0)
 	RenderingServer.global_shader_parameter_set("gof_enhanced", 1.0 if bool(get_value(app, "graphics", "enhanced_lighting", false)) else 0.0)
+	if orientation_available():
+		var turn := clampi(int(get_value(app, "display", "orientation", 0)), 0, 2)
+		DisplayServer.screen_set_orientation([DisplayServer.SCREEN_SENSOR, DisplayServer.SCREEN_SENSOR_LANDSCAPE, DisplayServer.SCREEN_SENSOR_PORTRAIT][turn])
 	var aspect: float = ASPECTS[clampi(int(get_value(app, "display", "aspect", 0)), 0, ASPECTS.size() - 1)]
 	if aspect <= 0.0:
 		root.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_EXPAND
@@ -113,6 +116,14 @@ static func apply_display(app) -> void:
 	else:
 		root.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_KEEP
 		root.content_scale_size = Vector2i(int(round(800.0 * aspect)), 800)
+
+## Screen orientation (Auto, Landscape, Portrait) as Deep offers it: only an
+## installed phone or tablet app turns its own screen; a browser tab cannot.
+## Auto follows the sensor through every direction, so a phone clamped upside
+## down in a controller still shows the picture the right way up.
+const ORIENTATIONS := ["Auto", "Landscape", "Portrait"]
+static func orientation_available() -> bool:
+	return OS.has_feature("mobile") and not OS.has_feature("web")
 
 ## Held upright (a window taller than it is wide), the interface lays out on
 ## an upright canvas so text and controls keep their landscape size, as

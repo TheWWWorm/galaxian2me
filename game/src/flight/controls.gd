@@ -110,10 +110,34 @@ func reset() -> void:
 	fire_was = false
 	helm = Vector2.ZERO
 	pressed.clear()
+	_pilot_down = -1
 	if is_instance_valid(touch): touch.reset()
 
 func _just(action: String) -> bool:
 	return Input.is_action_just_pressed(action)
+
+## Options → Controls → Hold autopilot for the list (after Deep's
+## tap / hold autopilot key): a tap acts on release as the original's key
+## does, holding it opens the autopilot list. Off, the key acts at once.
+const HOLD_MS := 450
+var _pilot_down := -1
+var _pilot_held := false
+func _autopilot_key() -> Array:
+	if not bool(app.setting("controls", "autopilot_hold", false)):
+		return [_just("autopilot"), false]
+	var now := Time.get_ticks_msec()
+	if Input.is_action_just_pressed("autopilot"):
+		_pilot_down = now
+		_pilot_held = false
+	if _pilot_down < 0: return [false, false]
+	if Input.is_action_pressed("autopilot"):
+		if not _pilot_held and now - _pilot_down >= HOLD_MS:
+			_pilot_held = true
+			return [false, true]
+		return [false, false]
+	var tap := not _pilot_held
+	_pilot_down = -1
+	return [tap, false]
 
 ## Set by automated checks to drive the ship without devices.
 var scripted: Callable = Callable()
@@ -177,13 +201,14 @@ func state(view) -> Dictionary:
 	fire_was = fire
 	if view != null: view.look_input = look
 	if (_just("rear_view") or bool(virtual.get("rear_view", false))) and view != null: view.toggle_look()
+	var pilot := _autopilot_key()
 	var auto_toggled: bool = _just("auto_fire") or bool(virtual.get("auto_fire", false))
 	if auto_toggled:
 		app.set_setting("controls", "auto_fire", not bool(app.setting("controls", "auto_fire", false)))
 	return {"yaw": yaw, "pitch": pitch, "strafe": strafe, "fire": fire, "fire_pressed": fire_pressed, "secondary": secondary,
 		"boost": Input.is_action_pressed("boost") or bool(virtual.get("boost", false)),
 		"next_target": _just("next_target") or bool(virtual.get("next_target", false)),
-		"autopilot": _just("autopilot") or bool(virtual.get("autopilot", false)),
+		"autopilot": bool(pilot[0]) or bool(virtual.get("autopilot", false)), "autopilot_list": bool(pilot[1]),
 		"cloak": _just("cloak"), "time_warp": _just("time_warp") or bool(virtual.get("time_warp", false)),
 		"action_menu": _just("action_menu") or bool(virtual.get("action_menu", false)), "map": _just("map") or bool(virtual.get("map", false)),
 		"auto_fire": bool(app.setting("controls", "auto_fire", false)), "auto_fire_toggled": auto_toggled}

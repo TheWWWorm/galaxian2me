@@ -111,6 +111,10 @@ func _audio_page() -> void:
 func _display_page() -> void:
 	_new_page("Display")
 	_group("Window")
+	if Prefs.orientation_available():
+		_choice("Screen orientation", Prefs.ORIENTATIONS, clampi(int(app.setting("display", "orientation", 0)), 0, 2),
+			func(i): app.set_setting("display", "orientation", i))
+		_note("Auto turns with the device, whichever way up it is held.")
 	if not OS.has_feature("web") and not OS.has_feature("mobile"):
 		_toggle("Fullscreen", "display", "fullscreen", false)
 		_note("F11 toggles fullscreen at any time.")
@@ -168,6 +172,8 @@ func _controls_page() -> void:
 	_new_page("Controls")
 	_group("Steering")
 	_toggle(app.library.text(14), "controls", "invert", false)
+	_toggle("Hold autopilot for the list", "controls", "autopilot_hold", false)
+	_note("A tap works the autopilot as the original's key does; holding the key half a second opens the autopilot list. Off, the key acts the moment it is pressed.")
 	var helms := ["direct", "smooth"]
 	_choice("Helm response", ["Direct", "Smooth"], maxi(0, helms.find(str(app.setting("controls", "helm", "direct")))),
 		func(i): app.set_setting("controls", "helm", helms[i]))
