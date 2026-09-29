@@ -202,7 +202,24 @@ func _display_page() -> void:
 	_toggle("Enhanced lighting", "graphics", "enhanced_lighting", false, func(_on):
 		Prefs.apply_display(app)
 		sync.call())
-	_note("Off keeps the original's flat phone lighting; on adds per-pixel light, highlights and glowing windows to the same models and textures.")
+	_note("Off keeps the original's flat phone lighting. On, the system's sun, explosions and engines light the same models and textures, with glossy hulls, fine relief and glowing windows and lamps.")
+	_toggle("Shadows", "graphics", "shadows", true, func(_on):
+		Prefs.apply_display(app)
+		sync.call())
+	_note("With enhanced lighting: ships, stations and asteroids cast shadows from the sun.")
+	_toggle("Metal reflections", "graphics", "reflections", true, func(_on):
+		Prefs.apply_display(app)
+		sync.call())
+	_note("With enhanced lighting: bare hull plating is metal and reflects a soft sky; off, hulls are painted.")
+	_choice("Light sources", Prefs.Lighting.SOURCE_NAMES, clampi(int(app.setting("graphics", "light_sources", 2)), 0, 2), func(i):
+		app.set_setting("graphics", "light_sources", i)
+		Prefs.apply_display(app)
+		sync.call())
+	_note("With enhanced lighting: engines, weapon fire, explosions and the lamps of stations, gates, the hangar and the lounge light what is near them. Few keeps the brightest; Many costs the most on phones.")
+	_toggle("Glare", "graphics", "glare", false, func(_on):
+		Prefs.apply_display(app)
+		sync.call())
+	_note("Light from the sun, engine flames, weapon fire, explosions and lamps spills softly around them. Two extra full-screen passes.")
 	_slider("Field of view", "graphics", "fov", Prefs.CLASSIC_FOV, 45.0, 90.0, 1.0, false, "%d°")
 	_note("The original's view is about %d°." % int(round(Prefs.CLASSIC_FOV)))
 	_toggle("Space dust", "graphics", "dust", true, sync)

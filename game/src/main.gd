@@ -27,6 +27,7 @@ var game: Game = null
 var screen: Node = null
 var ui_layer := CanvasLayer.new()
 var world_root := Node3D.new()
+var glare := preload("res://src/presentation/glare.gd").new()
 var music := AudioStreamPlayer.new()
 var music_name := ""
 var sfx_players: Array[AudioStreamPlayer] = []
@@ -50,6 +51,8 @@ func _ready() -> void:
 	add_child(world_root)
 	ui_layer.layer = 10
 	add_child(ui_layer)
+	# Between the 3D world and the interface.
+	add_child(glare)
 	music.bus = "Master"
 	add_child(music)
 	for i in 6:

@@ -5,6 +5,7 @@ extends Node3D
 ## the bar's five places. The camera starts at the room's entrance and eases
 ## over to whoever is chosen.
 
+const Lighting := preload("res://src/presentation/lighting.gd")
 const Assembly := preload("res://src/presentation/assembly.gd")
 const JavaRandom := preload("res://src/simulation/java_random.gd")
 
@@ -68,6 +69,8 @@ func setup(lib, station_id: int, faction: int, guests: Array) -> void:
 		var turn := _clear_turn(parts, guests.size())
 		for i in count:
 			if parts[i] != null: parts[i].transform = Transform3D(_segment_basis(i + turn, count), Vector3.ZERO)
+		# Enhanced lighting: the lounge's ceiling lights and glowing panels.
+		Lighting.model_lights(self, lib, 8, 3, 0.35, 0.14)
 	add_child(camera)
 	camera.keep_aspect = Camera3D.KEEP_WIDTH
 	camera.fov = 1024.0 / 4096.0 * 360.0

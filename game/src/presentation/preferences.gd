@@ -5,6 +5,8 @@ extends RefCounted
 ## in the app's settings file; these helpers read them with defaults and
 ## apply the ones that act on the engine.
 
+const Lighting := preload("res://src/presentation/lighting.gd")
+
 const FPS_LIMITS := [0, 30, 60, 120, 144]
 const RENDER_SCALES := [0.5, 0.67, 0.75, 0.85, 1.0]
 const MSAA := [Viewport.MSAA_DISABLED, Viewport.MSAA_2X, Viewport.MSAA_4X, Viewport.MSAA_8X]
@@ -18,11 +20,13 @@ const CLASSIC_FOV := 750.0 / 4096.0 * 360.0 * 0.9
 ## shows Custom when the current values match none of them.
 const PRESET_NAMES := ["Performance", "Balanced", "Quality"]
 const PRESETS := [
-	{"render_scale": 0.67, "msaa": 0, "enhanced_lighting": false, "dust": false, "lens_flare": false},
-	{"render_scale": 1.0, "msaa": 1, "enhanced_lighting": false, "dust": true, "lens_flare": true},
-	{"render_scale": 1.0, "msaa": 2, "enhanced_lighting": true, "dust": true, "lens_flare": true},
+	{"render_scale": 0.67, "msaa": 0, "enhanced_lighting": false, "glare": false, "dust": false, "lens_flare": false},
+	{"render_scale": 1.0, "msaa": 1, "enhanced_lighting": false, "glare": false, "dust": true, "lens_flare": true},
+	{"render_scale": 1.0, "msaa": 2, "enhanced_lighting": true, "shadows": true, "reflections": true, "light_sources": 2, "glare": true, "dust": true, "lens_flare": true},
 ]
-const PRESET_FALLBACKS := {"render_scale": 1.0, "msaa": 1, "enhanced_lighting": false, "dust": true, "lens_flare": true}
+## The lighting details only matter with enhanced lighting, so the presets
+## that leave it off do not set them.
+const PRESET_FALLBACKS := {"render_scale": 1.0, "msaa": 1, "enhanced_lighting": false, "shadows": true, "reflections": true, "light_sources": 2, "glare": false, "dust": true, "lens_flare": true}
 
 ## Keyboard actions players can rebind, in the order the menu lists them.
 const BINDABLE := ["steer_up", "steer_down", "steer_left", "steer_right", "throttle_up", "throttle_down", "fire", "secondary",
@@ -105,7 +109,9 @@ static func apply_display(app) -> void:
 	root.msaa_3d = MSAA[msaa]
 	root.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
 	root.scaling_3d_scale = clampf(float(get_value(app, "graphics", "render_scale", 1.0)), 0.5, 1.0)
-	RenderingServer.global_shader_parameter_set("gof_enhanced", 1.0 if bool(get_value(app, "graphics", "enhanced_lighting", false)) else 0.0)
+	Lighting.apply(tree, bool(get_value(app, "graphics", "enhanced_lighting", false)), bool(get_value(app, "graphics", "shadows", true)),
+		bool(get_value(app, "graphics", "reflections", true)), clampi(int(get_value(app, "graphics", "light_sources", 2)), 0, 2))
+	if app.get("glare") != null: app.glare.configure(bool(get_value(app, "graphics", "glare", false)), 1.3)
 	if orientation_available():
 		var turn := clampi(int(get_value(app, "display", "orientation", 0)), 0, 2)
 		DisplayServer.screen_set_orientation([DisplayServer.SCREEN_SENSOR, DisplayServer.SCREEN_SENSOR_LANDSCAPE, DisplayServer.SCREEN_SENSOR_PORTRAIT][turn])

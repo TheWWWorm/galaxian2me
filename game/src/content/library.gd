@@ -6,11 +6,14 @@ extends RefCounted
 
 const Mods := preload("res://src/content/mods.gd")
 const ShaderTemplate := preload("res://src/presentation/mascot_shader.gd")
+const SurfaceMap := preload("res://src/presentation/surface_map.gd")
 const Formats := preload("res://src/import/formats.gd")
 
 ## One model unit of the original is this many Godot units.
 const UNIT := 0.01
 
+var _glows := {}
+var _surface_images := {}
 var id := ""
 var root := ""
 var manifest := {}
@@ -92,6 +95,8 @@ func forget_replacements() -> void:
 	_images.clear()
 	_textures.clear()
 	_sounds.clear()
+	_glows.clear()
+	_surface_images.clear()
 	for scene in _replaced.values():
 		if scene != null: scene.free()
 	_replaced.clear()
@@ -115,6 +120,96 @@ func atlas_texture(name: String) -> Texture2D:
 			img.generate_mipmaps()
 		_textures[key] = ImageTexture.create_from_image(img) if img != null else null
 	return _textures[key]
+
+## The colour a model gives off, for the light it casts under enhanced
+## lighting (engine flames, bolts, the vortex): the brightness-weighted mean
+## of the atlas texels under its vertices, scaled to full brightness.
+func model_glow(name: String, fallback := Color(1, 1, 1)) -> Color:
+	var key := "glow:" + name
+	if _glows.has(key): return _glows[key]
+	var built := mesh(name)
+	var atlas := atlas_texture("space")
+	var img: Image = atlas.get_image() if atlas != null else null
+	var sum := Vector3.ZERO
+	if not built.is_empty() and img != null:
+		var m: ArrayMesh = built[0]
+		for s in m.get_surface_count():
+			var arrays := m.surface_get_arrays(s)
+			var uvs: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
+			for uv in uvs:
+				var c := img.get_pixel(clampi(int(uv.x), 0, img.get_width() - 1), clampi(int(uv.y), 0, img.get_height() - 1))
+				var v := maxf(c.r, maxf(c.g, c.b))
+				var sat := v - minf(c.r, minf(c.g, c.b))
+				# A flame's white core would wash its colour out.
+				sum += Vector3(c.r, c.g, c.b) * v * v * (0.15 + sat * 2.0)
+	var peak := maxf(sum.x, maxf(sum.y, sum.z))
+	_glows[key] = Color(sum.x / peak, sum.y / peak, sum.z / peak) if peak > 0.0 else fallback
+	return _glows[key]
+
+## Material hints for enhanced lighting (roughness, relief, lamps), derived
+## from an atlas the first time a model needs them.
+func surface_texture(name: String) -> Texture2D:
+	var key := "surface:" + name
+	if not _textures.has(key):
+		var atlas := atlas_texture(name)
+		var img: Image = atlas.get_image() if atlas != null else null
+		var hints: Image = SurfaceMap.derive(img) if img != null else null
+		_surface_images[name] = hints
+		_textures[key] = ImageTexture.create_from_image(hints) if hints != null else null
+	return _textures[key]
+
+## Where a model gives off light, for enhanced lighting: its additive glow
+## faces (flares, light cones, lamp halos) and its faces painted with lamps
+## or window rows, gathered into clusters in the model's own space. Each is
+## {pos, color, weight, size}, strongest first.
+func light_points(name: String) -> Array:
+	var key := "points:" + name
+	if _glows.has(key): return _glows[key]
+	var found: Array = []
+	var built := mesh(name)
+	var atlas := atlas_texture("space")
+	surface_texture("space")
+	var img: Image = atlas.get_image() if atlas != null else null
+	var hints: Image = _surface_images.get("space")
+	if not built.is_empty() and img != null:
+		var m: ArrayMesh = built[0]
+		var box: AABB = built[2]
+		var cell := maxf(0.05, box.get_longest_axis_size() / 6.0)
+		var buckets := {}
+		for s in m.get_surface_count():
+			var g: Dictionary = built[1][s]
+			var additive: bool = int(g.blend) == 4
+			if not additive and (not g.lit or int(g.blend) != 0 or g.texture < 0 or hints == null): continue
+			var arrays := m.surface_get_arrays(s)
+			var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+			var uvs: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
+			var colors: PackedColorArray = arrays[Mesh.ARRAY_COLOR]
+			for t in range(0, verts.size() - 2, 3):
+				var a := verts[t]; var b := verts[t + 1]; var c := verts[t + 2]
+				var area := (b - a).cross(c - a).length() * 0.5
+				if area <= 0.0: continue
+				var uv := (uvs[t] + uvs[t + 1] + uvs[t + 2]) / 3.0
+				var px := Vector2i(clampi(int(uv.x), 0, img.get_width() - 1), clampi(int(uv.y), 0, img.get_height() - 1))
+				var tone: Color = img.get_pixelv(px) if g.texture >= 0 else colors[t]
+				var strength := maxf(tone.r, maxf(tone.g, tone.b))
+				if not additive: strength *= hints.get_pixelv(px).b
+				if strength < 0.25: continue
+				# Lamp and flare glows outrank broad window panels, and coloured
+				# light outranks white: it is what reads as a light source.
+				var sat := strength - minf(tone.r, minf(tone.g, tone.b))
+				var w := area * strength * (4.0 if additive else 1.0) * (0.4 + sat * 1.5)
+				var centre := (a + b + c) / 3.0
+				var k := Vector3i((centre / cell).floor())
+				if not buckets.has(k): buckets[k] = [Vector3.ZERO, Vector3.ZERO, 0.0, 0.0]
+				var e: Array = buckets[k]
+				e[0] += centre * w; e[1] += Vector3(tone.r, tone.g, tone.b) * w * (0.2 + sat); e[2] += w; e[3] += area
+		for e in buckets.values():
+			var col: Vector3 = e[1]
+			col /= maxf(0.001, maxf(col.x, maxf(col.y, col.z)))
+			found.append({"pos": e[0] / e[2], "color": Color(col.x, col.y, col.z), "weight": e[2], "size": sqrt(e[3])})
+		found.sort_custom(func(p, q): return p.weight > q.weight)
+	_glows[key] = found
+	return found
 
 # ------------------------------------------------------------------ audio
 
@@ -303,7 +398,7 @@ func mesh(name: String, skinned := false, pattern := 0) -> Array:
 func material(g: Dictionary, skinned := false, station := false) -> ShaderMaterial:
 	var blend: int = g.blend
 	var smooth := smooth_stations if station else smooth_textures
-	var key := "%d|%s|%s|%s|%s|%s|%s|%s" % [blend, g.double, g.lit, g.specular, g.key, g.texture >= 0, skinned, smooth]
+	var key := "%d|%s|%s|%s|%s|%s|%s|%s|%s" % [blend, g.double, g.lit, g.specular, g.key, g.texture >= 0, skinned, smooth, station]
 	if _materials.has(key): return _materials[key]
 	var mode := "blend_mix"
 	if blend == 4: mode = "blend_add"
@@ -326,6 +421,11 @@ func material(g: Dictionary, skinned := false, station := false) -> ShaderMateri
 	var sphere := atlas_texture("spec")
 	mat.set_shader_parameter("sphere", sphere)
 	mat.set_shader_parameter("has_sphere", sphere != null)
+	var hints := surface_texture("space")
+	mat.set_shader_parameter("surface", hints)
+	mat.set_shader_parameter("relief", hints)
+	mat.set_shader_parameter("has_surface", hints != null)
+	mat.set_shader_parameter("station_surface", station)
 	mat.set_shader_parameter("textured", g.texture >= 0)
 	mat.set_shader_parameter("color_key", g.key)
 	mat.set_shader_parameter("lit", g.lit and blend == 0)
@@ -341,6 +441,7 @@ func instance(name: String, skinned := false, pattern := 0, station := false) ->
 	var built := mesh(name, skinned, pattern)
 	var node := MeshInstance3D.new()
 	node.name = name
+	node.set_meta("model", name)
 	if built.is_empty(): return node
 	# A player's glTF in place of a still model: scaled to the converted
 	# model's longest extent and centred where it sat. Animated (skinned)

@@ -4,6 +4,7 @@ extends Node3D
 ## them (by the system's faction, seeded by the station), with the camera
 ## slowly orbiting the ship.
 
+const Lighting := preload("res://src/presentation/lighting.gd")
 const Assembly := preload("res://src/presentation/assembly.gd")
 const JavaRandom := preload("res://src/simulation/java_random.gd")
 
@@ -33,6 +34,8 @@ func setup(lib, station_id: int, faction: int, ship_index: int, ship_faction: in
 		var end := Assembly.figure(lib, lib.model_name(end_id), 0, "", true)
 		end.transform = Transform3D(Assembly.basis(0, 2048, 0), Assembly.position([0, 0, 8192]))
 		add_child(end)
+	# Enhanced lighting: the hangar's lamps, light strips and door glow.
+	Lighting.model_lights(self, lib, 8, 3, 0.35, 0.16)
 	var lift := 0
 	if offsets is Array and ship_index < offsets.size(): lift = int(offsets[ship_index])
 	ship_node = Assembly.ship(lib, ship_index, ship_faction)

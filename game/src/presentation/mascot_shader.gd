@@ -7,10 +7,20 @@ const CODE := """shader_type spatial;
 // one texture atlas, per-polygon lighting and colour-keyed transparency, an
 // optional sphere-mapped highlight, and the four Micro3D blend modes.
 // Blend mode and culling are chosen per material variant by the library.
-render_mode BLEND_MODE, CULL_MODE, depth_draw_opaque, unshaded;
+render_mode BLEND_MODE, CULL_MODE, depth_draw_opaque;
 
 uniform sampler2D atlas : source_color, FILTER_MODE, repeat_disable;
 uniform sampler2D sphere : source_color, filter_linear, repeat_disable;
+// Material hints derived from the atlas (surface_map.gd): R height,
+// G roughness, B lamp emission. Relief reads the height smoothly even when
+// the atlas itself is drawn crisp.
+uniform sampler2D surface : FILTER_MODE, repeat_disable;
+uniform sampler2D relief : filter_linear_mipmap, repeat_disable;
+uniform bool has_surface = false;
+// Enhanced lighting only: bare rock is matte and has no lamps; station
+// plating has less sheen than a ship's paint.
+uniform bool mineral = false;
+uniform bool station_surface = false;
 uniform vec2 atlas_size = vec2(256.0);
 uniform bool textured = true;
 uniform bool color_key = false;
@@ -19,19 +29,12 @@ uniform bool specular = false;
 uniform bool has_sphere = false;
 uniform float blend_half = 0.0;
 global uniform vec3 gof_light_direction;
-// Optional enhanced lighting (Options): per-pixel light with a soft
-// highlight and rim, bright texels (windows, lamps) kept at full glow.
+// Enhanced lighting (Options): the scene's real lights (the system's sun,
+// explosions, engines) shade the atlas as a material. Off, the phone's own
+// per-polygon light is reproduced exactly and the scene's lights are off.
 global uniform float gof_enhanced;
-// Up to four explosion flashes lighting what is near them (enhanced only):
-// xyz world position, w reach; colour rgb already scaled by brightness.
-global uniform vec4 gof_flash_0;
-global uniform vec4 gof_flash_1;
-global uniform vec4 gof_flash_2;
-global uniform vec4 gof_flash_3;
-global uniform vec4 gof_flash_color_0;
-global uniform vec4 gof_flash_color_1;
-global uniform vec4 gof_flash_color_2;
-global uniform vec4 gof_flash_color_3;
+// Metal reflections option: how much of the atlas's metalness hint is used.
+global uniform float gof_metal;
 uniform float light_intensity = 1.0;
 uniform float ambient = 0.415;
 uniform vec4 tint : source_color = vec4(1.0);
@@ -42,15 +45,6 @@ uniform mat4 bones[48];
 
 varying float shade;
 varying vec2 sphere_uv;
-varying vec3 world_pos;
-varying vec3 world_normal;
-
-vec3 flash(vec4 f, vec4 col, vec3 p, vec3 n) {
-	if (f.w <= 0.0) return vec3(0.0);
-	vec3 d = f.xyz - p;
-	float fall = clamp(1.0 - length(d) / f.w, 0.0, 1.0);
-	return col.rgb * fall * fall * (0.35 + 0.65 * max(dot(n, normalize(d)), 0.0));
-}
 
 void vertex() {
 	if (skinned) {
@@ -59,8 +53,6 @@ void vertex() {
 		NORMAL = normalize(mat3(bones[b]) * NORMAL);
 	}
 	vec3 n = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
-	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	world_normal = n;
 	shade = 1.0;
 	if (lit) {
 		shade = min(1.0, ambient + light_intensity * max(dot(n, normalize(gof_light_direction)), 0.0));
@@ -72,23 +64,42 @@ void vertex() {
 void fragment() {
 	vec4 c = textured ? texture(atlas, UV / atlas_size) : vec4(COLOR.rgb, 1.0);
 	if (textured && color_key && c.a < 0.5) discard;
-	vec3 rgb = c.rgb * shade;
+	vec3 highlight = (specular && has_sphere) ? texture(sphere, sphere_uv).rgb : vec3(0.0);
 	if (gof_enhanced > 0.5 && lit) {
-		vec3 n = normalize(NORMAL);
-		vec3 l = normalize((VIEW_MATRIX * vec4(gof_light_direction, 0.0)).xyz);
-		float lit_amount = min(1.12, ambient * 0.8 + light_intensity * max(dot(n, l), 0.0));
-		float highlight = pow(max(dot(n, normalize(l + VIEW)), 0.0), 28.0) * 0.4;
-		float rim = pow(1.0 - max(dot(n, VIEW), 0.0), 3.0) * 0.22;
-		float glow = smoothstep(0.78, 0.95, dot(c.rgb, vec3(0.299, 0.587, 0.114)));
-		rgb = c.rgb * mix(lit_amount, 1.0, glow) + vec3(highlight) * (1.0 - glow) + vec3(0.32, 0.46, 0.66) * rim;
-		vec3 wn = normalize(world_normal);
-		vec3 flashes = flash(gof_flash_0, gof_flash_color_0, world_pos, wn) + flash(gof_flash_1, gof_flash_color_1, world_pos, wn)
-			+ flash(gof_flash_2, gof_flash_color_2, world_pos, wn) + flash(gof_flash_3, gof_flash_color_3, world_pos, wn);
-		rgb += c.rgb * flashes * (1.0 - glow);
+		vec3 base = c.rgb * tint.rgb * emission_boost;
+		ALBEDO = base;
+		METALLIC = mineral ? 0.0 : 0.1 * gof_metal;
+		SPECULAR = mineral ? 0.1 : (station_surface ? 0.12 : 0.4);
+		ROUGHNESS = 0.62;
+		// The original's sphere-mapped sheen (the hangar walls' chrome, the
+		// gloss on hulls) stays under the real reflections.
+		EMISSION = mineral ? vec3(0.0) : highlight;
+		if (textured && has_surface) {
+			vec2 st = UV / atlas_size;
+			vec4 hints = texture(surface, st);
+			ROUGHNESS = mineral ? 0.95 : (station_surface ? max(hints.g, 0.7) : mix(hints.g, hints.g * 0.6, gof_metal));
+			// Bare plating reflects the scene's sky like metal but keeps part
+			// of its paint, so a hull never turns into a black mirror in a
+			// dim room (as the HD game adds its reflection over the paint).
+			if (!mineral) METALLIC = hints.a * gof_metal * (station_surface ? 0.3 : 0.6);
+			// A light sheen along a ship's metal edges, as the HD game's rim.
+			if (!mineral && !station_surface) { RIM = hints.a * 0.35 * gof_metal; RIM_TINT = 0.6; }
+			EMISSION += mineral ? vec3(0.0) : base * hints.b * 2.4;
+			// Fine relief from the texel brightness, in the surface's own frame.
+			float h = texture(relief, st).r * (mineral ? 0.004 : 0.01);
+			vec3 dx = dFdx(VERTEX), dy = dFdy(VERTEX);
+			vec3 r1 = cross(dy, NORMAL), r2 = cross(NORMAL, dx);
+			float det = dot(dx, r1);
+			if (abs(det) > 0.000001) NORMAL = normalize(abs(det) * NORMAL - sign(det) * (dFdx(h) * r1 + dFdy(h) * r2));
+		}
+	} else {
+		// The phone's look, unchanged: all of it is emitted, nothing is lit.
+		ALBEDO = vec3(0.0);
+		METALLIC = 0.0;
+		SPECULAR = 0.0;
+		ROUGHNESS = 1.0;
+		EMISSION = (c.rgb * shade + highlight) * tint.rgb * emission_boost;
 	}
-	if (specular && has_sphere) rgb += texture(sphere, sphere_uv).rgb;
-	rgb *= tint.rgb * emission_boost;
-	ALBEDO = rgb;
 	//ALPHA_LINE ALPHA = tint.a * (blend_half > 0.5 ? 0.5 : 1.0);
 }
 """

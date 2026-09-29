@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.1.2
+
+- Enhanced lighting uses Godot's lights instead of a lighting approximation in the model shader: a directional light from the system's sun (from the station's own sky layout) with 4-split shadows, ambient light tinted by the system's sky colour, an omni light at each ship's engine flames (brightness follows the throttle and booster), and up to four omni lights at the brightest explosions and bomb blasts. The station hangar, lounge, title scene and ship/station previews have a ceiling or sun key light.
+- Material hints are derived at run time from the supplied texture atlas (`surface_map.gd`): roughness, relief from texel brightness, and an emission mask for small bright islands on a darker surround (window rows, lamps, indicator lights). Large or long bright areas are excluded. The atlas itself is unchanged.
+- New option: Shadows (with enhanced lighting).
+- The sun's light takes 18% of the star sprite's mean colour; a second, unshadowed directional light from the station's planet adds a soft fill in half the planet picture's mean colour (energy 0.05–0.18). None in Void space.
+- Engine lights take the colour of the ship's own flame model; weapon bolts nearest the camera (up to six) carry a light in their model's colour, brighter for the first 600 units from the muzzle and at the point of impact. The open wormhole and the tractor beam light what is near them.
+- Asteroids use a matte, non-emissive variant of the material; station plating has less specular and a higher minimum roughness. The hangar and lounge key light is dimmer (0.48, ambient 0.24–0.3) so the pad's additive overlay no longer clips.
+- With enhanced lighting off, the model shader writes the original's per-polygon lighting as emission with no albedo, so the classic look is unchanged while the lights are hidden.
+- Removed the `gof_flash_*` shader globals.
+- Metalness is derived from the atlas as well (surface map alpha: low saturation and mid-to-high brightness read as metal, 0.08–0.9). Ships use 60% of it and station plating 30%, so hulls keep part of their paint in dim scenes; ships also get a rim sheen on metal. The original's sphere-mapped highlight is kept at full strength with enhanced lighting (it is most of the hangar walls' brightness). Metal reflects a procedural sky (dark top, bright horizon band, dark floor) set as the environment's reflection source; the background is still the clear colour.
+- Lamp lights: `Library.light_points` finds the glowing places of a model (additive faces and faces over the lamp mask), weighted by area, strength and saturation. Stations and motherships get up to 10 omni lights, gates 4, the hangar and lounge 8; lights closer than 60% of their reach merge.
+- Omni lights use attenuation 0 (range falloff only). With the default attenuation of 1, the falloff at station scale left lamp and engine light with no visible effect.
+- New options: Metal reflections (on/off) and Light sources (Off, Few, Many). At Few: the player's engine, the first 2–4 lamps of each structure, two explosions and two weapon bolts. The Quality preset turns on shadows and reflections and sets light sources to Many.
+- Added the `gof_metal` shader global.
+- Hangar and lounge: key light from a low slant (energy 0.5, shadow opacity 0.6) with an unshadowed fill from the other side (0.35) and ambient 0.2, instead of a key from overhead. Walls and the ship were darker than the original; the floor was lighter and its additive orange overlay less saturated. The reflection sky is dimmer with a warm floor colour.
+- New option: Glare (Quality preset). Two canvas passes between the 3D world and the interface (layers 1 and 2): the first stores how far each pixel's brightest channel is past 0.7 (squared) in alpha; the second adds that mask, taken from five mip levels of the screen texture and coloured by the averaged picture, on top of the picture. Environment glow is not used, since it lifts the background clear colour in the Compatibility renderer.
+
 ## 0.1.1
 
 - Web: the JAR conversion runs in slices of about 40 ms on the main thread and draws a frame between them, so the progress bar advances and the browser no longer reports the page as unresponsive.

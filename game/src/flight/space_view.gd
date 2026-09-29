@@ -10,6 +10,7 @@ const Prefs := preload("res://src/presentation/preferences.gd")
 const Backdrop := preload("res://src/presentation/backdrop.gd")
 const Library := preload("res://src/content/library.gd")
 const VortexView := preload("res://src/presentation/vortex_view.gd")
+const Lighting := preload("res://src/presentation/lighting.gd")
 
 const UNIT := Library.UNIT
 
@@ -39,6 +40,8 @@ var probe_node: Node3D
 var drive_node: Node3D
 var tractor_crate: Node3D
 var tractor_beam: MeshInstance3D
+var tractor_light: OmniLight3D
+var wormhole_light: OmniLight3D
 
 func setup(owner, sim) -> void:
 	# This subtree receives already-presented poses in sync(), not physics
@@ -54,6 +57,15 @@ func setup(owner, sim) -> void:
 	env.environment = Environment.new()
 	env.environment.background_mode = Environment.BG_COLOR
 	add_child(env)
+	# Enhanced lighting: the system's sun lights and shadows everything from
+	# where its sprite sits; the dark side keeps the phone's ambient share,
+	# tinted by the system's sky.
+	# Metal reflects a dim sky in the system's colour, brighter towards the
+	# galactic band, and black below.
+	Lighting.environment(env, Color(0.3, 0.32, 0.38) + backdrop.tint * 0.9,
+		Color(0.05, 0.055, 0.08) + backdrop.tint, Color(0.8, 0.8, 0.84) + backdrop.tint * 2.0, Color(0.02, 0.02, 0.03))
+	Lighting.sky_lights(self, backdrop, 700.0)
+	for i in FLASH_LIGHTS: flash_lights.append(Lighting.point(self, Color.WHITE, 1.0, i >= 2))
 	camera.near = 1.0
 	camera.far = 6000.0
 	# The original's 750/4096-turn view is across a portrait phone screen;
@@ -78,18 +90,23 @@ func _node_for(b: Body) -> Node3D:
 				n = Assembly.figure(library, b.model, 0)
 			else:
 				n = Assembly.ship(library, b.ship_index, _livery(b))
+				Lighting.engine_light(n, library, b == space.player)
 		Body.Kind.STATION:
 			n = Assembly.station(library, b.station_id, b.faction)
+			Lighting.model_lights(n, library, 10, 4, 1.3, 0.25)
 		Body.Kind.MOTHERSHIP:
 			n = Assembly.figure(library, b.model)
+			Lighting.model_lights(n, library, 6, 2, 1.0, 0.15)
 		Body.Kind.GATE:
 			n = _animated(b.model, 38)
+			Lighting.model_lights(n, library, 4, 2, 1.2, 0.3)
 		Body.Kind.WORMHOLE:
 			n = VortexView.new()
 			n.setup(library)
 		Body.Kind.ASTEROID:
 			n = Assembly.figure(library, b.model, b.pattern_frame)
 			n.scale = b.scale
+			_mineral(n)
 		Body.Kind.LOOT:
 			n = Assembly.figure(library, b.model, 0)
 			n.scale = b.scale
@@ -98,6 +115,22 @@ func _node_for(b: Body) -> Node3D:
 	add_child(n)
 	nodes[b] = n
 	return n
+
+## Enhanced lighting: bare rock is matte and has no lamps. One set of
+## materials per rock model, shared by every asteroid wearing it.
+var mineral_materials := {}
+func _mineral(node: Node) -> void:
+	if node is MeshInstance3D:
+		var mi := node as MeshInstance3D
+		for i in mi.get_surface_override_material_count():
+			var m := mi.get_surface_override_material(i) as ShaderMaterial
+			if m == null: continue
+			if not mineral_materials.has(m):
+				var own := m.duplicate() as ShaderMaterial
+				own.set_shader_parameter("mineral", true)
+				mineral_materials[m] = own
+			mi.set_surface_override_material(i, mineral_materials[m])
+	for c in node.get_children(): _mineral(c)
 
 func _livery(b: Body) -> int:
 	match b.pattern_frame:
@@ -123,6 +156,7 @@ func _present(delta: float) -> void:
 	# a physical crossing or a change to the source cinematic camera.
 	_camera(delta)
 	var seen := {}
+	if wormhole_light != null: wormhole_light.light_energy = 0.0
 	for b in space.bodies:
 		if not b.visible or b.kind == Body.Kind.STAR or b.kind == Body.Kind.ARRIVAL: continue
 		if not b.alive and b.dead_timer <= 0.0: continue
@@ -132,6 +166,11 @@ func _present(delta: float) -> void:
 		var t := Transform3D(b.basis, b.pos * UNIT)
 		if b.kind == Body.Kind.WORMHOLE:
 			n.sync(space.clock, b.pos * UNIT, camera.global_position, b.opening_scale)
+			# Enhanced lighting: the open vortex lights ships near its mouth.
+			if wormhole_light == null:
+				wormhole_light = Lighting.point(self, library.model_glow(library.model_name(6805), Color(0.5, 0.7, 1.0)), 260.0)
+			wormhole_light.position = b.pos * UNIT
+			wormhole_light.light_energy = 1.5 * clampf(float(b.opening_scale), 0.0, 1.0)
 			continue
 		if b.kind == Body.Kind.ASTEROID or b.kind == Body.Kind.LOOT:
 			t.basis = b.basis.scaled_local(b.scale)
@@ -146,7 +185,10 @@ func _present(delta: float) -> void:
 			if boosters != null:
 				# Out in scripted scenes and while the drill is in the rock.
 				boosters.visible = b.exhaust and not (b == space.player and space.mining != null)
-				Assembly.stretch_boosters(boosters, space.boost_flare() if b == space.player else 0.0, space.throttle / 100.0 if b == space.player else 1.0)
+				var flare: float = space.boost_flare() if b == space.player else 0.0
+				var power: float = space.throttle / 100.0 if b == space.player else 1.0
+				Assembly.stretch_boosters(boosters, flare, power)
+				if boosters.has_meta("light"): boosters.get_meta("light").light_energy = 2.0 * (0.35 + 0.65 * power) + flare * 1.2
 		n.transform = t
 	for b in nodes.keys():
 		if not seen.has(b):
@@ -322,12 +364,16 @@ func _sync_tractor() -> void:
 		material.albedo_color = Color(0.4, 0.75, 1.0, 0.65)
 		tractor_beam.material_override = material
 		add_child(tractor_beam)
+		# Enhanced lighting: the beam's glow on the container it holds.
+		tractor_light = Lighting.point(tractor_beam, Color(0.4, 0.75, 1.0), 9.0)
+		tractor_light.light_energy = 0.8
 	# A wreck crate is drawn as itself; a disabled ship's container is not
 	# a body of its own until it arrives.
 	var crate_at: Vector3 = space.tractor.crate.pos if pulling_crate else space.tractor.position
 	tractor_crate.visible = not pulling_crate
 	tractor_crate.position = crate_at * UNIT
 	tractor_beam.visible = true
+	tractor_light.position = crate_at * UNIT
 	var mesh: ImmediateMesh = tractor_beam.mesh
 	mesh.clear_surfaces()
 	var start: Vector3 = (space.player.pos + space.player.forward() * 1024.0) * UNIT
@@ -502,6 +548,38 @@ func _sync_shots() -> void:
 			var out := ((p.pos as Vector3) - (p.muzzle as Vector3)).dot(dir) * UNIT
 			length = clampf(out / tail, 0.02, 1.0)
 		node.global_transform = Transform3D(Basis.looking_at(dir, up) * Basis.from_scale(Vector3(width, width, length)), p.pos * UNIT)
+	_sync_bolt_lights(shots)
+
+## Enhanced lighting: the bolts nearest the camera light what they pass in
+## their own colour; a fresh one flares at the muzzle and a spent one at
+## the point it struck.
+const BOLT_LIGHTS := 6
+const BOLT_REACH := 16.0
+var bolt_lights: Array[OmniLight3D] = []
+func _sync_bolt_lights(shots: Array) -> void:
+	if bolt_lights.is_empty():
+		for i in BOLT_LIGHTS: bolt_lights.append(Lighting.point(self, Color.WHITE, BOLT_REACH, i >= 2))
+	var near: Array = []
+	if Lighting.enhanced:
+		var eye := camera.global_position
+		for i in shots.size():
+			var p: Dictionary = shots[i]
+			var at: Vector3 = (p.get("hit_at", p.pos) as Vector3) * UNIT
+			var d := eye.distance_to(at)
+			if d > BOLT_REACH * 12.0: continue
+			var strength := 1.0
+			if p.has("hit_at"): strength = 2.2
+			elif p.has("muzzle") and ((p.pos as Vector3) - (p.muzzle as Vector3)).length() * UNIT < 6.0: strength = 2.6
+			near.append([d, at, str(p.weapon.get("model", "")), strength])
+		near.sort_custom(func(a, b): return a[0] < b[0])
+	for i in bolt_lights.size():
+		var light := bolt_lights[i]
+		if i >= near.size():
+			light.light_energy = 0.0
+			continue
+		light.position = near[i][1]
+		light.light_color = library.model_glow(near[i][2], Color(1.0, 0.6, 0.3))
+		light.light_energy = 0.7 * near[i][3]
 
 ## The largest z any mesh under `node` reaches, in its parent's space.
 static func _furthest_z(node: Node, to_parent: Transform3D) -> float:
@@ -559,12 +637,14 @@ func _sync_effects(_delta: float) -> void:
 			effect_nodes.erase(e)
 	_sync_flashes()
 
-## Enhanced lighting: the four brightest explosions light the hulls, stations
+## Enhanced lighting: the brightest explosions light the hulls, stations
 ## and asteroids around them, fading as they burn out.
 const FLASH_REACH := 9000.0
+const FLASH_LIGHTS := 4
+var flash_lights: Array[OmniLight3D] = []
 func _sync_flashes() -> void:
 	var lights: Array = []
-	if Prefs.get_value(app, "graphics", "enhanced_lighting", false):
+	if Lighting.enhanced:
 		for e in space.effects:
 			var k := clampf(float(e.time) / maxf(0.001, float(e.life)), 0.0, 1.0)
 			var reach := 0.0
@@ -576,17 +656,20 @@ func _sync_flashes() -> void:
 					reach = float(e.radius) * 1.6
 					if e.get("emp", false): color = Color(0.45, 0.65, 1.0)
 			if reach <= 0.0: continue
-			var strength := pow(1.0 - k, 1.5) * 1.6
+			var strength := pow(1.0 - k, 1.5)
 			var near := 1.0 / (1.0 + camera.global_position.distance_to((e.pos as Vector3) * UNIT) / (reach * UNIT * 4.0))
-			lights.append([strength * near, (e.pos as Vector3) * UNIT, reach * UNIT, color * strength])
+			lights.append([strength * near, (e.pos as Vector3) * UNIT, reach * UNIT, color, strength])
 		lights.sort_custom(func(a, b): return a[0] > b[0])
-	for i in 4:
+	for i in flash_lights.size():
+		var light := flash_lights[i]
 		if i < lights.size():
 			var l: Array = lights[i]
-			RenderingServer.global_shader_parameter_set("gof_flash_%d" % i, Vector4(l[1].x, l[1].y, l[1].z, l[2]))
-			RenderingServer.global_shader_parameter_set("gof_flash_color_%d" % i, Vector4(l[3].r, l[3].g, l[3].b, 1.0))
+			light.position = l[1]
+			light.omni_range = l[2]
+			light.light_color = l[3]
+			light.light_energy = 2.5 * l[4]
 		else:
-			RenderingServer.global_shader_parameter_set("gof_flash_%d" % i, Vector4.ZERO)
+			light.light_energy = 0.0
 
 func _effect_node(e: Dictionary) -> Node3D:
 	match str(e.kind):
@@ -755,7 +838,3 @@ func _on_event(kind: String, _data: Dictionary) -> void:
 	if kind == "hit":
 		if Prefs.screen_shake(app): shake = 0.4
 		Prefs.rumble(app, 0.5, 0.2)
-
-func _exit_tree() -> void:
-	# The hangar and title share the shader: no flash outlives the flight.
-	for i in 4: RenderingServer.global_shader_parameter_set("gof_flash_%d" % i, Vector4.ZERO)

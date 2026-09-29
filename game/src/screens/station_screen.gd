@@ -3,6 +3,7 @@ extends Control
 ## (Hangar, Space Lounge, Map, Missions, Status, Game Options). Sections the
 ## story has not opened yet stay locked, as in the original.
 
+const Lighting := preload("res://src/presentation/lighting.gd")
 const UI := preload("res://src/presentation/ui.gd")
 const HangarView := preload("res://src/presentation/hangar_view.gd")
 const ShopPanel := preload("res://src/screens/station/shop_panel.gd")
@@ -72,6 +73,15 @@ func _build_scene() -> void:
 	env.environment.background_mode = Environment.BG_COLOR
 	env.environment.background_color = Color(0.02, 0.025, 0.03)
 	scene.add_child(env)
+	# Enhanced lighting: the hangar and lounge are lit at a low slant, with a
+	# soft fill from the other side, so the walls keep the brightness the
+	# original gives them while the dark floor gets little: lit more, it
+	# turns grey under the pad's additive orange rings. Metal reflects a
+	# dim room with a warm floor.
+	Lighting.environment(env, Color(0.2, 0.206, 0.224), Color(0.5, 0.5, 0.52), Color(0.36, 0.34, 0.31), Color(0.45, 0.28, 0.08))
+	# Soft shadows: the low light throws long ones across the lounge floor.
+	Lighting.key_light(scene, -Vector3(0.7, 0.25, 0.65), Color(1.0, 0.96, 0.9), 0.5, 120.0).shadow_opacity = 0.6
+	Lighting.fill_light(scene, Vector3(0.6, -0.15, 0.8), Color(0.85, 0.9, 1.0), 0.35)
 	view.camera.make_current()
 
 func _build_layout() -> void:

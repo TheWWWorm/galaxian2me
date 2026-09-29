@@ -90,6 +90,7 @@ static func ship(library, index: int, faction := 0) -> Node3D:
 		node.transform = Transform3D(Basis.from_scale(Vector3(s[0], s[1], s[2]) / 4096.0) * basis(part.rotation[0], part.rotation[1], part.rotation[2]),
 			position(part.position))
 		if is_booster(model):
+			node.set_meta("model", name)
 			node.set_meta("rest_scale", Vector3(s[0], s[1], s[2]) / 4096.0)
 			node.set_meta("turn", basis(part.rotation[0], part.rotation[1], part.rotation[2]))
 	return root

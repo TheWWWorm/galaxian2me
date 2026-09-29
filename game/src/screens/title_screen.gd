@@ -2,6 +2,7 @@ extends Control
 ## Title: a random station seen along the original's title camera path, the
 ## logo, and the main menu with the original's labels.
 
+const Lighting := preload("res://src/presentation/lighting.gd")
 const UI := preload("res://src/presentation/ui.gd")
 const Assembly := preload("res://src/presentation/assembly.gd")
 const Backdrop := preload("res://src/presentation/backdrop.gd")
@@ -106,13 +107,18 @@ func _build_scene() -> void:
 	var st: Dictionary = cat.station(station_id)
 	var faction: int = int(cat.system(int(st.system)).faction)
 	app.world_root.add_child(scene)
-	scene.add_child(Assembly.station(lib, station_id, faction))
+	var station := Assembly.station(lib, station_id, faction)
+	scene.add_child(station)
+	Lighting.model_lights(station, lib, 10, 4, 1.3, 0.25)
 	backdrop = Backdrop.new()
 	backdrop.setup(lib, station_id, cat)
 	scene.add_child(backdrop)
 	env.environment = Environment.new()
 	env.environment.background_mode = Environment.BG_COLOR
 	scene.add_child(env)
+	Lighting.environment(env, Color(0.3, 0.32, 0.38) + backdrop.tint * 0.9,
+		Color(0.05, 0.055, 0.08) + backdrop.tint, Color(0.8, 0.8, 0.84) + backdrop.tint * 2.0, Color(0.02, 0.02, 0.03))
+	Lighting.sky_lights(scene, backdrop, 1500.0)
 	camera.near = 1.0
 	camera.far = 6000.0
 	camera.keep_aspect = Camera3D.KEEP_WIDTH

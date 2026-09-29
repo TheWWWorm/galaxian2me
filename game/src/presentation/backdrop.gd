@@ -18,6 +18,11 @@ var star_for_planet: Array = [5, 1, 2, 3, 0, 2, 4, 5, 4, 4, 1, 5, 2, 3, 2, 3, 2,
 var library
 var sun_direction := Vector3(0, 0, -1)
 var tint := Color(0.04, 0.05, 0.04)
+## For enhanced lighting: the star's colour (from its sprite) and the planet's
+## (from its picture), and where the planet stands. No planet in Void space.
+var sun_color := Color(1, 1, 1)
+var planet_direction := Vector3.ZERO
+var planet_color := Color(0, 0, 0)
 var sky: MeshInstance3D
 var sprites: Array = []
 
@@ -43,6 +48,7 @@ func setup(lib, station_id: int, catalogue) -> void:
 		tint = Color(10.0 / 765.0, 136.0 / 765.0, 10.0 / 765.0)
 		sun_direction = Vector3(0, 0, 1)
 		_sprite(_sun_texture(0), sun_direction, 60.0, true)
+		sun_color = _hue(lib.image("sun_0"), true)
 		return
 	var color: Array = system.get("color", [10, 136, 10])
 	if color.size() >= 3:
@@ -51,11 +57,36 @@ func setup(lib, station_id: int, catalogue) -> void:
 	sun_direction = sky_layout.sun
 	_sprite(_sun_texture(int(system.get("star", 0))), sun_direction, 60.0, true)
 	_sprite(lib.texture("planet_%d" % int(st.get("planet", 0))), sky_layout.planet, 55.0, false)
+	sun_color = _hue(lib.image("sun_%d" % int(system.get("star", 0))), true)
+	planet_direction = sky_layout.planet
+	planet_color = _hue(lib.image("planet_%d" % int(st.get("planet", 0))), false)
 	for sid in sky_layout.stars:
 		var entry: Dictionary = sky_layout.stars[sid]
 		_sprite(lib.texture("star_%d" % int(entry.image)), entry.direction, 5.0, true)
 	for n in sky_layout.nebulae:
 		_sprite(lib.texture("nebula%d" % int(n.image)), n.direction, 50.0, true)
+
+## The mean colour of a picture's visible texels: scaled to full brightness
+## for a star (its light's hue), kept at its own brightness for a planet (the
+## light it reflects).
+static func _hue(img: Image, full: bool) -> Color:
+	if img == null: return Color(1, 1, 1) if full else Color(0, 0, 0)
+	var small := img.duplicate() as Image
+	if small.is_compressed(): small.decompress()
+	small.convert(Image.FORMAT_RGBA8)
+	small.resize(16, 16, Image.INTERPOLATE_BILINEAR)
+	var sum := Vector3.ZERO
+	var weight := 0.0
+	for y in 16:
+		for x in 16:
+			var c := small.get_pixel(x, y)
+			var w := c.a * (maxf(c.r, maxf(c.g, c.b)) if full else 1.0)
+			sum += Vector3(c.r, c.g, c.b) * w
+			weight += w
+	if weight <= 0.0: return Color(1, 1, 1) if full else Color(0, 0, 0)
+	sum /= weight
+	if full: sum /= maxf(0.001, maxf(sum.x, maxf(sum.y, sum.z)))
+	return Color(sum.x, sum.y, sum.z)
 
 ## Where the sky's objects sit, by the original's seeded placement: the sun,
 ## this station's planet, the other stations' stars and the nebulae.

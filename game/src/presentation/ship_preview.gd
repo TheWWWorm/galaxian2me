@@ -3,6 +3,7 @@ extends SubViewportContainer
 ## imported model in its own world, lit from above as in the hangar,
 ## turning slowly. Dragging across the picture turns it by hand.
 
+const Lighting := preload("res://src/presentation/lighting.gd")
 const Assembly := preload("res://src/presentation/assembly.gd")
 
 var library
@@ -15,6 +16,7 @@ var pivot := Node3D.new()
 var camera := Camera3D.new()
 var angle := 0.6
 var dragging := false
+var key: DirectionalLight3D
 ## Turning speed by itself, radians a second.
 const TURN := 0.45
 
@@ -29,15 +31,16 @@ func _ready() -> void:
 	viewport.msaa_3d = Viewport.MSAA_4X
 	add_child(viewport)
 	viewport.add_child(pivot)
-	var light := DirectionalLight3D.new()
-	light.transform = Transform3D(Basis.looking_at(Vector3(-0.3, -0.9, -0.3)), Vector3.ZERO)
-	viewport.add_child(light)
+	key = Lighting.key_light(viewport, Vector3(-0.3, -0.9, -0.3), Color(1.0, 0.96, 0.9), 1.1, 100.0)
+	# Always on: a player's replacement model is lit by it in either mode,
+	# and the original's models ignore it while enhanced lighting is off.
+	key.remove_from_group(Lighting.GROUP)
+	key.visible = true
 	var env := WorldEnvironment.new()
 	env.environment = Environment.new()
 	env.environment.background_mode = Environment.BG_CLEAR_COLOR
-	env.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.environment.ambient_light_color = Color(0.55, 0.6, 0.7)
 	viewport.add_child(env)
+	Lighting.environment(env, Color(0.4, 0.43, 0.5))
 	viewport.add_child(camera)
 	if ship_index >= 0: show_ship(ship_index, ship_faction)
 
@@ -76,6 +79,7 @@ func _present(model: Node3D) -> void:
 	camera.fov = 40.0
 	camera.near = reach * 0.02
 	camera.far = reach * 20.0
+	key.directional_shadow_max_distance = reach * 6.0
 	# From a little above and ahead, as a showroom shot, far enough back
 	# that the whole bounding sphere fits the 40° view as it turns.
 	var eye := Vector3(0.0, 0.3, 1.0).normalized() * (reach / sin(deg_to_rad(20.0)) * 1.05)
