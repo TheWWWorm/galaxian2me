@@ -65,11 +65,53 @@ static func make_theme(text_size := 16) -> Theme:
 	t.set_stylebox("grabber_pressed", "VScrollBar", grab)
 	var track := StyleBoxFlat.new(); track.bg_color = Color(0, 0, 0, 0.35)
 	t.set_stylebox("scroll", "VScrollBar", track)
+	# Switches: a drawn pill that reads as on or off at a glance, rows that
+	# line up with the labels of sliders and choices beside them.
+	for state in ["checked", "unchecked", "checked_disabled", "unchecked_disabled"]:
+		t.set_icon(state, "CheckButton", _switch(state.begins_with("checked"), state.ends_with("disabled")))
+	var flat := StyleBoxEmpty.new(); flat.content_margin_left = 0; flat.content_margin_top = 4; flat.content_margin_bottom = 4
+	for style in ["normal", "hover", "pressed", "hover_pressed", "disabled"]:
+		t.set_stylebox(style, "CheckButton", flat)
+	var ring := _box(Color(0, 0, 0, 0), GREEN, 2); ring.set_content_margin_all(0)
+	t.set_stylebox("focus", "CheckButton", ring)
+	t.set_font_size("font_size", "CheckButton", 15)
+	t.set_color("font_color", "CheckButton", TEXT)
+	t.set_color("font_hover_color", "CheckButton", Color.WHITE)
+	t.set_color("font_pressed_color", "CheckButton", TEXT)
+	t.set_color("font_hover_pressed_color", "CheckButton", Color.WHITE)
+	t.set_color("font_focus_color", "CheckButton", Color.WHITE)
+	t.set_stylebox("normal", "OptionButton", _box(DEEP.darkened(0.2), BORDER_DARK))
+	t.set_stylebox("hover", "OptionButton", _box(DEEP.lightened(0.08), BORDER))
+	t.set_stylebox("pressed", "OptionButton", _box(HIGHLIGHT.darkened(0.3), BORDER))
+	t.set_stylebox("focus", "OptionButton", _box(Color(0, 0, 0, 0), GREEN, 2))
+	t.set_font_size("font_size", "OptionButton", 15)
 	var bar_bg := _box(Color(0, 0, 0, 0.5), BORDER_DARK)
 	var bar_fill := StyleBoxFlat.new(); bar_fill.bg_color = GREEN
 	t.set_stylebox("background", "ProgressBar", bar_bg)
 	t.set_stylebox("fill", "ProgressBar", bar_fill)
 	return t
+
+## A 40x20 switch: green with the knob right when on, dark with it left when off.
+static func _switch(on: bool, disabled: bool) -> ImageTexture:
+	var w := 40; var h := 20
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	var track := (GREEN.darkened(0.25) if on else Color(0.16, 0.2, 0.25))
+	var knob := (Color.WHITE if on else Color(0.62, 0.68, 0.75))
+	if disabled: track = track.darkened(0.5); knob = knob.darkened(0.45)
+	var edge := BORDER if not on else GREEN
+	var r := h / 2.0
+	var kx := w - r if on else r
+	for y in h:
+		for x in w:
+			var px := Vector2(x + 0.5, y + 0.5)
+			var c := Vector2(clampf(px.x, r, w - r), r)
+			var d := px.distance_to(c)
+			var col := Color(0, 0, 0, 0)
+			if d <= r: col = track
+			if d > r - 1.2 and d <= r: col = edge
+			if px.distance_to(Vector2(kx, r)) <= r - 3.0: col = knob
+			img.set_pixel(x, y, col)
+	return ImageTexture.create_from_image(img)
 
 static func _box(bg: Color, border: Color, width := 1) -> StyleBoxFlat:
 	var b := StyleBoxFlat.new()
@@ -192,6 +234,8 @@ static func ask(parent: Node, question: String, yes: Callable, no := Callable(),
 	layer.layer = 70
 	layer.process_mode = Node.PROCESS_MODE_ALWAYS
 	layer.add_child(q)
+	# A layer stops theme inheritance: the question carries the interface theme.
+	if parent.is_inside_tree(): q.theme = parent.get_tree().root.theme
 	parent.add_child(layer)
 	q.build(question)
 	return q

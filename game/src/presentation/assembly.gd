@@ -38,10 +38,10 @@ static func frame_pattern(anim: Dictionary, frame: int) -> int:
 	return mask
 
 ## A single model posed at one frame of its own (or a named) action.
-static func figure(library, name: String, frame := 0, action_name := "") -> Node3D:
+static func figure(library, name: String, frame := 0, action_name := "", station := false) -> Node3D:
 	var anim: Dictionary = library.animation(action_name if not action_name.is_empty() else name)
 	var pattern := frame_pattern(anim, frame)
-	var node: MeshInstance3D = library.instance(name, false, pattern)
+	var node: MeshInstance3D = library.instance(name, false, pattern, station)
 	return node
 
 ## The faction livery frame the original selects for a ship.
@@ -63,8 +63,10 @@ static func station_frame(faction: int) -> int:
 static func is_booster(model_id: int) -> bool:
 	return model_id >= 13064 and model_id <= 13071
 
-## A ship assembled from its parts. Boosters are returned under "Boosters" so
-## the caller can show them only while the engine is boosting.
+## A ship assembled from its parts. The engine flames are returned under
+## "Boosters": the original always draws them (scripted scenes hide them) and
+## stretches them while the booster runs; each keeps its rest scale and turn
+## so the view can do the same.
 static func ship(library, index: int, faction := 0) -> Node3D:
 	var root := Node3D.new()
 	root.name = "Ship%d" % index
@@ -87,7 +89,18 @@ static func ship(library, index: int, faction := 0) -> Node3D:
 		var s: Array = part.scale
 		node.transform = Transform3D(Basis.from_scale(Vector3(s[0], s[1], s[2]) / 4096.0) * basis(part.rotation[0], part.rotation[1], part.rotation[2]),
 			position(part.position))
+		if is_booster(model):
+			node.set_meta("rest_scale", Vector3(s[0], s[1], s[2]) / 4096.0)
+			node.set_meta("turn", basis(part.rotation[0], part.rotation[1], part.rotation[2]))
 	return root
+
+## The flames lengthen with the boost as the original's do: half a unit
+## across and a whole unit along at full thrust.
+static func stretch_boosters(boosters: Node3D, amount: float) -> void:
+	for node in boosters.get_children():
+		if not node.has_meta("rest_scale"): continue
+		var grow := Vector3(0.5, 0.5, 1.0) * amount
+		node.basis = Basis.from_scale(node.get_meta("rest_scale") + grow) * node.get_meta("turn")
 
 ## A station laid out from its record, or null when the table has none.
 static func station(library, station_id: int, faction: int) -> Node3D:
@@ -96,7 +109,7 @@ static func station(library, station_id: int, faction: int) -> Node3D:
 	var root := Node3D.new()
 	root.name = "Station%d" % station_id
 	if entry == null or entry.parts.is_empty():
-		var void_station := figure(library, library.model_name(3337))
+		var void_station := figure(library, library.model_name(3337), 0, "", true)
 		root.add_child(void_station)
 		return root
 	var frame := station_frame(faction)
@@ -108,7 +121,7 @@ static func station(library, station_id: int, faction: int) -> Node3D:
 		var name: String = library.model_name(part.model)
 		if name.is_empty(): continue
 		# Module liveries come from the shared station action table.
-		var node := figure(library, name, frame, "stat_all")
+		var node := figure(library, name, frame, "stat_all", true)
 		node.transform = Transform3D(basis(part.rotation[0], part.rotation[1], part.rotation[2]), position(part.position))
 		root.add_child(node)
 	return root

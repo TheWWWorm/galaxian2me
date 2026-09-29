@@ -12,6 +12,8 @@ var lines: Array = []
 var index := 0
 var frame
 var portrait: Control
+## Mission dialogue (briefing/result) rather than a help or notice box.
+var chime := false
 var name_label: Label
 var text: Label
 ## What to press here for keys the line names in the phone's terms.
@@ -21,8 +23,9 @@ var back_button: Button
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	# The original's chime whenever a message box opens.
-	if app != null: app.play_sound("fx_message_02", 0.7)
+	# The original chimes only when a mission's own dialogue opens (briefing,
+	# success, failure); help windows and computer notices are silent.
+	if app != null and chime: app.play_sound("fx_message_02", 0.7)
 	var shade := ColorRect.new()
 	shade.color = Color(0, 0, 0, 0.35)
 	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)

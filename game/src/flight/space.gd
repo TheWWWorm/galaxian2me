@@ -87,6 +87,9 @@ var travelling := -1
 var travel_station := -1
 var boost_time := 0
 var boost_ready := true
+var boost_length := 0
+## Sideways speed as a share of forward speed, as Deep's strafe.
+const STRAFE_RATE := 0.6
 ## Cloaking device: while `cloak` is positive the player is hidden from
 ## other ships. `cloak_time` counts up while cloaked (to the device's
 ## duration) and while recharging (to its reload); -1 means ready.
@@ -785,6 +788,13 @@ func step(delta: float, input: Dictionary) -> void:
 		if story.step == 42 and story.failed: return
 		if story.controls_locked:
 			input = {"yaw": 0.0, "pitch": 0.0}
+		elif in_opening():
+			# The opening's fight is only a fight: no autopilot, map, action
+			# menu, time warp or cloak, as the original's intro allows none.
+			var fight := {}
+			for key in ["yaw", "pitch", "strafe", "fire", "fire_pressed", "secondary", "boost", "auto_fire", "auto_fire_toggled"]:
+				if input.has(key): fight[key] = input[key]
+			input = fight
 	if portal_arriving(): input = {"yaw": 0.0, "pitch": 0.0}
 	if input.get("autopilot", false):
 		# The original's autopilot key: off when on ("Autopilot Off"); when
@@ -795,9 +805,11 @@ func step(delta: float, input: Dictionary) -> void:
 			event.emit("message", {"text": lib.text(292) + " " + lib.text(16)})
 		elif target != null and target.alive:
 			autopilot = true
+			event.emit("sound", {"name": "fx_message_05"})
 			event.emit("message", {"text": lib.text(270) + ": " + (target.name if not target.name.is_empty() else lib.text(292))})
 		elif course_body() != null:
 			autopilot = true
+			event.emit("sound", {"name": "fx_message_05"})
 			event.emit("message", {"text": lib.text(270) + ": " + cat.station_name(int(game.destination.get("station", -1)))})
 		elif mission_waypoint() != null:
 			fly_to_waypoint()
@@ -864,6 +876,8 @@ func _fly_player(delta: float, ms: int, input: Dictionary) -> void:
 			completed_flight = true
 			event.emit("jumped", {"station": travel_station, "system": s.system_index, "travel": true})
 		return
+	# A scene holding the ship still (the original's setFreeze).
+	if story != null and story.frozen: return
 	var yaw: float = input.get("yaw", 0.0)
 	var pitch: float = input.get("pitch", 0.0)
 	if turret_mode:
@@ -885,9 +899,14 @@ func _fly_player(delta: float, ms: int, input: Dictionary) -> void:
 	player.basis = player.basis.rotated(player.basis.x, -pitch * rate * delta).orthonormalized()
 	if absf(yaw) < 0.01 and absf(pitch) < 0.01: _align_to_horizon(ms)
 	# Bank for the look of it, levelling out again when not turning.
-	player.ai["bank"] = move_toward(float(player.ai.get("bank", 0.0)), -yaw * 0.5, delta * 1.5)
+	# A sideways slide (Deep's strafe) leans the same way as a turn.
+	var strafe: float = 0.0 if autopilot or turret_mode else clampf(float(input.get("strafe", 0.0)), -1.0, 1.0)
+	player.ai["bank"] = move_toward(float(player.ai.get("bank", 0.0)), -(yaw + strafe * 0.6) * 0.5, delta * 1.5)
 	# Boost: the booster's speed for its duration, then its reload time.
-	var boost_speed := 2.0 + float(st.boost_speed) / 100.0 * 2.0
+	boost_length = int(st.boost_length)
+	# The original truncates: 2 + (int)(percent / 100 × 2), so a 60% or 80%
+	# booster both fly at 3.
+	var boost_speed := 2.0 + float(int(float(st.boost_speed) / 100.0 * 2.0))
 	if input.get("boost", false) and boost_ready and int(st.boost_length) > 0 and not player.boosting:
 		player.boosting = true
 		boost_time = 0
@@ -906,6 +925,8 @@ func _fly_player(delta: float, ms: int, input: Dictionary) -> void:
 			if int(st.boost_length) > 0: event.emit("message", {"text": lib.text(155)})
 	player.speed = boost_speed if player.boosting else PLAYER_SPEED
 	player.pos += player.forward() * player.speed * ms
+	# Right is −x in the ship's frame (a right turn swings the nose to −x).
+	if strafe != 0.0: player.pos -= player.basis.x * strafe * player.speed * STRAFE_RATE * ms
 	# Bounds: far out, the original pulls the ship back in.
 	if player.pos.length() > 500000.0:
 		player.pos = player.pos.normalized() * 480000.0
@@ -968,7 +989,6 @@ func toggle_cloak() -> bool:
 	for b in bodies:
 		if b.is_ship() and b != player and b.ai.get("target") == player: b.ai.target = null
 	event.emit("cloak", {"on": true})
-	event.emit("sound", {"name": "fx_boost_02"})
 	return true
 
 ## Fraction of the current cloak or recharge phase that has elapsed.
@@ -1109,6 +1129,7 @@ func autopilot_to(key: String) -> bool:
 
 func _engage_autopilot() -> void:
 	autopilot = true
+	event.emit("sound", {"name": "fx_message_05"})
 	autopilot_waypoint = false
 	autopilot_field = false
 
@@ -1211,22 +1232,24 @@ func _fire(owner: Body, w: Dictionary, direction := Vector3.ZERO) -> void:
 	w.cooldown = int(w.reload)
 	var dir := direction if direction != Vector3.ZERO else owner.forward()
 	var origin: Vector3 = owner.pos + owner.basis * (w.offset as Vector3) + dir * 400.0
-	var p := {"pos": origin, "vel": dir * float(w.speed) + owner.forward() * owner.speed, "life": int(w.life),
+	# Gun.shootAt: the round flies at its own speed along the muzzle, without
+	# the ship's speed added.
+	var p := {"pos": origin, "vel": dir * float(w.speed), "life": int(w.life),
 		"owner": owner, "weapon": w, "target": target if owner == player else owner.ai.get("target")}
 	projectiles.append(p)
 	if owner == player:
 		shots_fired += 1
 		if w.kind == "emp" or w.kind == "nuke": game.session.add_stat("bombs_used")
-		event.emit("sound", {"name": launch_sound(w), "volume": 0.35 if w.kind == "gun" else 0.8})
+		var launch := launch_sound(w)
+		if not launch.is_empty(): event.emit("sound", {"name": launch, "volume": 0.8})
 
 ## The original's launch sounds: rockets, torpedoes, and one for EMP bombs
-## and nukes alike. It plays nothing for guns; the engine gives them a
-## quiet click so a shot isn't silent.
+## and nukes alike. Guns fire silently, as they do in the original.
 func launch_sound(w: Dictionary) -> String:
 	match w.kind:
 		"missile": return "wpn_rocket_03" if int(w.type) == Catalogue.Type.TORPEDO else "wpn_rocket_02"
 		"emp", "nuke": return "wpn_rocket_04"
-	return "fx_menu_04"
+	return ""
 
 func npc_fire(b: Body, w: Dictionary) -> void:
 	_fire(b, w)
@@ -1236,9 +1259,12 @@ func _projectiles_step(delta: float, ms: int) -> void:
 	for p in projectiles:
 		var w: Dictionary = p.weapon
 		p.life = int(p.life) - ms
-		if w.kind == "missile" and p.target != null and p.target.alive:
-			var want: Vector3 = (p.target.pos - p.pos).normalized() * p.vel.length()
-			p.vel = p.vel.lerp(want, minf(1.0, delta * 2.5))
+		# RocketGun: only torpedoes are guided, and only after their first
+		# 1.5 s; then they turn straight at the target each frame.
+		if w.kind == "missile" and int(w.type) == Catalogue.Type.TORPEDO and int(w.life) - int(p.life) > 1500:
+			var mark: Body = _torpedo_mark(p)
+			if mark != null:
+				p.vel = (mark.pos - p.pos).normalized() * p.vel.length()
 		var step_vec: Vector3 = p.vel * ms
 		var hit: Body = _sweep(p, step_vec)
 		p.pos += step_vec
@@ -1257,6 +1283,23 @@ func _projectiles_step(delta: float, ms: int) -> void:
 			continue
 		keep.append(p)
 	projectiles = keep
+
+## The player's torpedo follows the radar lock; others the nearest ship
+## within 15000 units on each axis (RocketGun without a radar).
+func _torpedo_mark(p: Dictionary) -> Body:
+	var owner: Body = p.owner
+	if owner == player:
+		return target if locked and target != null and target.alive and target.is_ship() else null
+	var best: Body = null
+	var best_d := INF
+	for b in bodies:
+		if b == owner or not b.alive or not b.is_ship() or not b.combat_active: continue
+		if b != player and b.faction == owner.faction: continue
+		var d: Vector3 = b.pos - p.pos
+		if absf(d.x) >= 15000.0 or absf(d.y) >= 15000.0 or absf(d.z) >= 15000.0: continue
+		if d.length_squared() < best_d:
+			best_d = d.length_squared(); best = b
+	return best
 
 func _missile_body_state(body: Body) -> Dictionary:
 	return {"hull": body.hull, "armor": body.armor, "shield": body.shield,
@@ -1301,6 +1344,10 @@ func _impact(p: Dictionary, hit: Body) -> void:
 		return
 	effects.append({"kind": "spark", "pos": p.pos, "time": 0.0, "life": 0.3})
 	if hit.kind in [Body.Kind.STATION, Body.Kind.GATE, Body.Kind.MOTHERSHIP]: return
+	# Gun.calcCharacterCollision: a rocket or torpedo breaks an asteroid outright.
+	if w.kind == "missile" and hit.kind == Body.Kind.ASTEROID:
+		_harm(hit, 9999.0, 0.0, p.owner)
+		return
 	_harm(hit, float(w.damage), float(w.emp), p.owner)
 
 ## EMP bombs and nukes: everything within the blast radius takes a share
@@ -1311,15 +1358,18 @@ func _blast(p: Dictionary) -> void:
 	effects.append({"kind": "blast", "pos": p.pos, "time": 0.0, "life": 1.2, "radius": radius, "emp": w.kind == "emp"})
 	# A nuke goes off with the thunder, an EMP bomb with its own crackle.
 	event.emit("sound", {"name": "fx_thunder_01" if w.kind == "nuke" else "wpn_nuke_02"})
+	# Gun.ignite: the launcher's own targets only (never its owner); EMP
+	# bombs pass asteroids by, nukes break them at 60% of the force.
 	for b in bodies:
-		if not b.alive or not (b.is_ship() or b.kind == Body.Kind.ASTEROID): continue
+		if not b.alive or b == p.owner or not (b.is_ship() or b.kind == Body.Kind.ASTEROID): continue
+		if w.kind == "emp" and b.kind == Body.Kind.ASTEROID: continue
 		var d: float = b.pos.distance_to(p.pos)
 		if d >= radius: continue
 		var f := clampf((radius - d) / radius, 0.0, 1.0)
 		if w.kind == "emp":
 			_harm(b, 0.0, (float(w.emp) if w.emp > 0 else 9999.0) * f, p.owner)
 		else:
-			_harm(b, float(w.damage) * f * (0.6 if b == player else 1.0), float(w.emp) * f, p.owner)
+			_harm(b, float(w.damage) * f * (0.6 if b.kind == Body.Kind.ASTEROID else 1.0), float(w.emp) * f, p.owner)
 
 func _harm(b: Body, damage: float, emp_damage: float, source: Body) -> void:
 	if not b.combat_active: return
@@ -1403,14 +1453,14 @@ func _radio_call(race: int, first: int) -> void:
 	radio = {"speaker": speaker, "name": lib.text(Catalogue.STRING_SPEAKERS + speaker),
 		"text": lib.text(first + rng.randi_range(0, 2)), "face": face}
 	radio_until = clock + 6000
-	event.emit("sound", {"name": "fx_message_02", "volume": 0.7})
 
 func _destroyed(b: Body, source: Body) -> void:
 	Wingmen.died(self, b)
 	if b.kind == Body.Kind.SHIP and b.faction == 9 and _recurring_wormhole() and not fallen_voids.has(b):
 		fallen_voids.append(b)
 	effects.append({"kind": "explosion", "pos": b.pos, "time": 0.0, "life": 1.6, "scale": 1.0 if b.kind != Body.Kind.FREIGHTER else 2.5})
-	event.emit("sound", {"name": "fx_explosion_01"})
+	# Ships fade out with distance as in the original; stations do not.
+	event.emit("sound", {"name": "fx_explosion_01", "volume": 1.0 if b.kind == Body.Kind.STATION else _distance_volume(b.pos)})
 	if b == player:
 		event.emit("destroyed", {})
 		return
@@ -1448,10 +1498,14 @@ func _destroyed(b: Body, source: Body) -> void:
 	b.dead_timer = 1.0
 	event.emit("killed", {"body": b})
 
+## The original's explosion falloff: full at the player, silent from 40000 units.
+func _distance_volume(at: Vector3) -> float:
+	return 1.0 - minf(40000.0, at.distance_to(player.pos)) / 40000.0
+
 func _break_asteroid(a: Body) -> void:
 	a.alive = false
 	effects.append({"kind": "asteroid", "pos": a.pos, "time": 0.0, "life": 1.6, "scale": a.scale.x})
-	event.emit("sound", {"name": "fx_explosion_03"})
+	event.emit("sound", {"name": "fx_explosion_03", "volume": _distance_volume(a.pos)})
 	# Ore chunks now and then; class A cores more often. A mined-out
 	# asteroid leaves nothing.
 	if a.ore >= 154 and a.ore != 164:
@@ -1562,8 +1616,7 @@ func _collect(l: Body) -> void:
 		event.emit("message", {"text": lib.format(261, {"#Q": str(taken), "#N": cat.item_name(item)})})
 	l.cargo = remaining
 	l.alive = not remaining.is_empty()
-	if took: event.emit("sound", {"name": "fx_message_03"})
-	elif not remaining.is_empty(): event.emit("message", {"text": lib.text(159)})
+	if not took and not remaining.is_empty(): event.emit("message", {"text": lib.text(159)})
 
 ## A wreck crate drifts for 45 seconds, then blows up (the original's crate
 ## life); ore chunks from asteroids stay.
@@ -1576,7 +1629,6 @@ func _age_crate(l: Body, ms: int) -> void:
 		l.alive = false
 		l.dead_timer = 1.0
 		effects.append({"kind": "explosion", "pos": l.pos, "time": 0.0, "life": 1.0, "scale": 0.4})
-		event.emit("sound", {"name": "fx_explosion_03"})
 
 ## A crate the tractor has pulled in, as KIPlayer.captureCrate takes it: a
 ## random share (at least one unit, never the whole stack unless it is one)
@@ -1605,7 +1657,6 @@ func _capture_crate(l: Body) -> void:
 	_salvage_record(item, taken)
 	stats["collected"] = int(stats.get("collected", 0)) + taken
 	event.emit("message", {"text": lib.format(261, {"#Q": str(taken), "#N": cat.item_name(item)})})
-	event.emit("sound", {"name": "fx_message_03"})
 
 ## Medal records for salvaged goods: Void remains and kinds of drink.
 func _salvage_record(item: int, count: int) -> void:
@@ -1653,7 +1704,6 @@ func _loot(b: Body) -> void:
 	# transfers the carrier's opposite ID. Scanner/hold remain physical data.
 	var message_item := int(story.job.item) if recovery else item
 	event.emit("message", {"text": lib.format(261, {"#Q": str(count), "#N": cat.item_name(message_item)})})
-	event.emit("sound", {"name": "fx_message_03"})
 
 ## A freelance fight under way here keeps the pilot in the area: the
 ## original refuses docking, gates and flights to other planets until the
@@ -1730,10 +1780,14 @@ func _act_on_target() -> void:
 		Body.Kind.STATION:
 			autopilot = true
 			event.emit("message", {"text": lib.text(276)})
+			event.emit("sound", {"name": "fx_message_05"})
 		Body.Kind.GATE:
 			autopilot = true
+			event.emit("sound", {"name": "fx_message_05"})
 		Body.Kind.WORMHOLE:
-			if target.visible: autopilot = true
+			if target.visible:
+				autopilot = true
+				event.emit("sound", {"name": "fx_message_05"})
 		Body.Kind.STAR:
 			if mission_holds_here():
 				_say_held()
@@ -1741,7 +1795,7 @@ func _act_on_target() -> void:
 			travel_station = target.station_id
 			travelling = 0
 			game.destination = {"station": travel_station}
-			event.emit("sound", {"name": "fx_boost_02"})
+			event.emit("sound", {"name": "fx_message_05"})
 		Body.Kind.ASTEROID:
 			_begin_mining(target)
 
@@ -1762,6 +1816,7 @@ func _begin_mining(a: Body) -> void:
 	mining = null
 	autopilot = false
 	event.emit("message", {"text": lib.text(296)})
+	event.emit("sound", {"name": "fx_message_05"})
 
 ## Flies up to the asteroid, then runs the drill until it is through or wrecked.
 func _mining_step(delta: float, ms: int, input: Dictionary) -> void:
@@ -1872,13 +1927,19 @@ func _targeting(ms: int, input: Dictionary) -> void:
 			lock_time += ms
 			if lock_time >= lock_needed and not locked:
 				locked = true
-				event.emit("sound", {"name": "fx_message_05", "volume": 0.5})
+
+## The new game's opening scene: the original's intro locks nothing but the
+## ships (its radar picks contexts only once past the intro), so a station or
+## planet can never be locked, flown to or docked at from it.
+func in_opening() -> bool:
+	return story != null and story.step == 0
 
 func _aimed_body() -> Body:
 	var best: Body = null
 	var best_dot := 0.985
 	var fwd := player.forward()
 	for b in bodies:
+		if in_opening() and not b.is_ship(): continue
 		if not b.visible and b.kind != Body.Kind.STAR: continue
 		if not b.alive or b == player or b.kind == Body.Kind.ARRIVAL or b.kind == Body.Kind.LOOT: continue
 		var dir: Vector3
@@ -1895,6 +1956,7 @@ func _aimed_body() -> Body:
 func _cycle_target() -> void:
 	var candidates: Array = []
 	for b in bodies:
+		if in_opening() and not b.is_ship(): continue
 		if not b.visible and b.kind != Body.Kind.STAR: continue
 		if b.alive and b != player and b.kind != Body.Kind.ARRIVAL and b.kind != Body.Kind.LOOT and b.kind != Body.Kind.ASTEROID:
 			candidates.append(b)
@@ -1977,3 +2039,10 @@ func _regenerate_voids(ms: int) -> void:
 		if not bodies.has(b): bodies.append(b)
 		event.emit("void_regenerated", {"body": b, "clock": clock})
 	fallen_voids = fallen_voids.filter(func(b): return not b.alive)
+
+## How far the engine flames are drawn out: they grow over the first sixth of
+## the boost, burn full, and shrink back over the last sixth.
+func boost_flare() -> float:
+	if not player.boosting or boost_length <= 0: return 0.0
+	var t := float(boost_time) / (boost_length / 6.0)
+	return t if t < 1.0 else (6.0 - t if t > 5.0 else 1.0)

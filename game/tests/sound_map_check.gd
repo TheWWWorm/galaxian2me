@@ -27,7 +27,7 @@ func run() -> void:
 	var game := Game.new(app.library, app.catalogue)
 	var sim := Space.new(game)
 	var T = app.catalogue.Type
-	var expect := {T.LASER: "fx_menu_04", T.ROCKET: "wpn_rocket_02", T.TORPEDO: "wpn_rocket_03",
+	var expect := {T.LASER: "", T.ROCKET: "wpn_rocket_02", T.TORPEDO: "wpn_rocket_03",
 		T.EMP_BOMB: "wpn_rocket_04", T.NUKE: "wpn_rocket_04"}
 	for t in expect:
 		var id := first_of(t)
@@ -41,6 +41,12 @@ func run() -> void:
 		heard.clear()
 		sim._blast({"pos": Vector3.ZERO, "weapon": sim.weapon(id), "owner": null})
 		check(heard.has(pair[1]), "type %d goes off with %s" % pair)
+	# Only the sounds the original plays: nothing for loot, radio or the lock.
+	heard.clear()
+	if sim.player == null: sim.player = Body.new()
+	sim.player.pos = Vector3.ZERO
+	check(is_equal_approx(sim._distance_volume(Vector3(0, 0, 20000)), 0.5) and sim._distance_volume(Vector3(0, 0, 90000)) == 0.0,
+		"explosions fade out by 40000 units")
 	var d = preload("res://src/screens/dialogue_panel.gd").new()
 	d.app = app
 	d.lines = [{"speaker": -1, "name": "", "text": "x"}]

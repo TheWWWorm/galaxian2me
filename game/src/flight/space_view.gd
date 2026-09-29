@@ -78,7 +78,6 @@ func _node_for(b: Body) -> Node3D:
 				n = Assembly.figure(library, b.model, 0)
 			else:
 				n = Assembly.ship(library, b.ship_index, _livery(b))
-				n.get_node("Boosters").visible = b.kind == Body.Kind.PLAYER and b.boosting
 		Body.Kind.STATION:
 			n = Assembly.station(library, b.station_id, b.faction)
 		Body.Kind.MOTHERSHIP:
@@ -137,7 +136,10 @@ func sync(delta: float) -> void:
 				n.visible = b.alive and stretch > 0.0
 				t.basis = t.basis.scaled_local(Vector3(maxf(0.01, stretch), 1.0, 1.0))
 			var boosters := n.get_node_or_null("Boosters")
-			if boosters != null: boosters.visible = b.boosting or b.kind != Body.Kind.PLAYER
+			if boosters != null:
+				# Out in scripted scenes and while the drill is in the rock.
+				boosters.visible = b.exhaust and not (b == space.player and space.mining != null)
+				Assembly.stretch_boosters(boosters, space.boost_flare() if b == space.player else 0.0)
 		n.transform = t
 	for b in nodes.keys():
 		if not seen.has(b):
@@ -421,7 +423,12 @@ func _sync_trails() -> void:
 				var p: Vector3 = pts[i] * UNIT
 				var along: Vector3 = (pts[maxi(0, i - 1)] - pts[mini(pts.size() - 1, i + 1)]) * UNIT
 				var side := (p - eye).cross(along)
-				side = side.normalized() * TRAIL_WIDTH * UNIT if side.length_squared() > 0.0000001 else Vector3.ZERO
+				# A ship that has hardly moved leaves no ribbon: the original's
+				# quads of a still trail have no area. Full width only once the
+				# samples are a trail's width apart, so waiting or bobbing ships
+				# never draw squares.
+				var reach := clampf(along.length() / (TRAIL_WIDTH * UNIT * 4.0), 0.0, 1.0)
+				side = side.normalized() * TRAIL_WIDTH * UNIT * reach if side.length_squared() > 0.0000001 else Vector3.ZERO
 				# v runs from the ship's end (the region's bottom) back.
 				var near := clampf((p.distance_to(eye) / UNIT - TRAIL_FADE_NEAR) / (TRAIL_FADE_FULL - TRAIL_FADE_NEAR), 0.0, 1.0)
 				edges.append([p - side, p + side, 1.0 - float(i) / length, Color(near, near, near)])
@@ -616,6 +623,10 @@ func _make_dust() -> void:
 func _dust_follow() -> void:
 	dust.visible = Prefs.dust(app)
 	camera.fov = Prefs.fov(app)
+	# Held upright the screen is the original's own shape: the angle spans
+	# its width again, and the view gains height instead of becoming a slit.
+	var shape := get_viewport().get_visible_rect().size
+	camera.keep_aspect = Camera3D.KEEP_WIDTH if shape.y > shape.x else Camera3D.KEEP_HEIGHT
 	if not dust.visible: return
 	# Particles wrap within a box around the camera so the ship flies past them.
 	var c := camera.global_position

@@ -39,10 +39,11 @@ func run() -> void:
 		check(owner != null and lounge.list.is_ancestor_of(owner), "the first person in the lounge is highlighted")
 		if not people.is_empty():
 			var shown := false
-			for l in lounge.detail.find_children("*", "Label", true, false):
-				if (l as Label).text == str(people[0].name): shown = true
+			await frames(2)
+			for l in lounge.list.find_children("*", "Label", true, false):
+				if (l as Label).text == str(people[0].name) and (l as Label).is_visible_in_tree(): shown = true
 			check(shown and lounge.selected == -1 and not bool(people[0].get("talked", false)),
-				"their portrait and name show without starting a conversation")
+				"their name shows over them without starting a conversation")
 		st.close_panel()
 		await frames(2)
 		st._open_section(3)

@@ -27,6 +27,11 @@ var touch = null
 var radio_showing := false
 ## The radio box's lower edge, which the readouts below it keep clear of.
 var radio_bottom := 0.0
+## The lowest edge of the panels along the top (last frame's, and this
+## frame's as it is drawn); the transform _shift last set.
+var top_stack := 0.0
+var _stack_now := 0.0
+var _shift_by := Vector2.ZERO
 var top_readout := false
 ## False while a box over the flight takes Enter (the flight screen sets it).
 var skip_hint := true
@@ -132,7 +137,7 @@ func wingmen_remaining_ms() -> int:
 ## displays without crowding small ones.
 var k := 1.0
 const MARGIN := 14.0
-const PANEL := Color(0.02, 0.07, 0.12, 0.74)
+const PANEL := Color(0.02, 0.07, 0.12, 0.55)
 const RULE := Color(0.25, 0.45, 0.62, 0.45)
 const LABEL := Color8(0x7f, 0xa9, 0xcc)
 const ACCENT := Color8(0x5c, 0xb8, 0xff)
@@ -153,7 +158,7 @@ func _draw() -> void:
 	if space.portal_arriving(): return
 	if space.using_jump_drive and space.jumping >= 0: return
 	var size := get_viewport_rect().size
-	k = clampf(size.y / 800.0, 0.8, 1.6) * Prefs.hud_scale(app)
+	k = clampf(minf(size.x, size.y) / 800.0 * 0.85, 0.72, 1.4) * Prefs.hud_scale(app)
 	self_modulate.a = Prefs.hud_opacity(app)
 	text_layer.self_modulate.a = self_modulate.a
 	var colours: Dictionary = Prefs.palette(app)
@@ -167,6 +172,8 @@ func _draw() -> void:
 	if story != null and not story.message().is_empty(): radio_line = story.message()
 	var radio_on := not radio_line.is_empty()
 	radio_showing = radio_on
+	top_stack = _stack_now
+	_stack_now = 0.0
 	radio_bottom = _radio_rect(size, radio_line).end.y if radio_on else 0.0
 	top_readout = countdown_remaining_ms() >= 0 or _challenge() or space.mining != null
 	if story != null:
@@ -174,8 +181,8 @@ func _draw() -> void:
 			var peak := 0.25 if Prefs.reduce_flashing(app) else 1.0
 			draw_rect(Rect2(Vector2.ZERO, size), Color(1, 1, 1, clampf(story.flash, 0.0, peak)))
 		if story.hud_hidden: _draw_radio(size, radio_line)
-		if not radio_on and not touch_layout and skip_hint and story.can_skip_wait():
-			_centered(Vector2(size.x / 2.0, size.y - 28.0 * k), "Enter / A: skip", 12, Color(UI.TEXT_DIM, 0.8), true)
+		if not touch_layout and skip_hint and (story.can_skip_wait() or radio_on and story.hud_hidden):
+			_centered(Vector2(size.x / 2.0, size.y - 28.0 * k), "Enter / click / A: skip", 12, Color(UI.TEXT_DIM, 0.8), true)
 		if story.hud_hidden: return
 	# Looking around moves the view off the ship's line of fire.
 	if view == null or (absf(view.look_yaw) < 0.15 and absf(view.look_pitch) < 0.15):
@@ -189,11 +196,18 @@ func _draw() -> void:
 	var safe := SafeMargins.margins(size, touch_layout)
 	area = size - Vector2(safe.side * 2.0, safe.top + safe.bottom)
 	_shift(Vector2(safe.side, safe.top))
-	_draw_location()
-	_draw_vitals(area)
-	_draw_weapons(area)
-	_draw_radar(area)
-	_draw_target(area)
+	# The opening fight keeps only the crosshair and the markers over ships:
+	# the original's intro never turns its HUD on (hud.drawUI), and it has
+	# no radar scope at all.
+	var radar_only: bool = story != null and story.radar_only
+	if not radar_only and original_style():
+		_draw_original(area)
+	elif not radar_only:
+		_draw_location()
+		_draw_vitals(area)
+		_draw_weapons(area)
+		if bool(app.setting("interface", "radar_scope", true)): _draw_radar(area)
+		_draw_target(area)
 	if space.mining != null: _draw_mining(area)
 	_shift(Vector2.ZERO)
 	_draw_radio(size, radio_line)
@@ -247,6 +261,7 @@ var area := Vector2.ZERO
 
 ## Moves the following drawing, text included, by `by`.
 func _shift(by: Vector2) -> void:
+	_shift_by = by
 	draw_set_transform(by)
 	RenderingServer.canvas_item_add_set_transform(text_layer.get_canvas_item(), Transform2D(0.0, by))
 
@@ -268,6 +283,9 @@ func _width(value: String, px: float) -> float:
 
 ## A translucent instrument plate with clipped corners and an accent rule.
 func _plate(rect: Rect2, accent := ACCENT) -> void:
+	# Panels hanging from the top edge: how far down they reach, so an
+	# upright screen's radio box can sit below them.
+	if rect.position.y + _shift_by.y < size.y * 0.35: _stack_now = maxf(_stack_now, rect.end.y + _shift_by.y)
 	var c := 8.0 * k
 	var x := rect.position.x
 	var y := rect.position.y
@@ -275,11 +293,10 @@ func _plate(rect: Rect2, accent := ACCENT) -> void:
 	var h := rect.size.y
 	var pts := PackedVector2Array([Vector2(x + c, y), Vector2(x + w, y), Vector2(x + w, y + h - c),
 		Vector2(x + w - c, y + h), Vector2(x, y + h), Vector2(x, y + c)])
+	# No outline: a quiet translucent backing, as the original's HUD keeps
+	# its figures floating over the view. The accent survives as a short tick.
 	draw_colored_polygon(pts, PANEL)
-	var edge := pts.duplicate()
-	edge.append(pts[0])
-	draw_polyline(edge, Color(UI.BORDER, 0.85), 1.0, true)
-	draw_line(Vector2(x + c + 2, y + 2), Vector2(x + c + 44 * k, y + 2), accent, 2.0)
+	draw_line(Vector2(x + c, y + 1), Vector2(x + c + 22 * k, y + 1), Color(accent, 0.55), 2.0)
 
 ## A thin segmented gauge filling left to right.
 func _gauge(at: Vector2, width: float, frac: float, color: Color, segments := 24) -> void:
@@ -311,9 +328,10 @@ func _draw_location() -> void:
 	var place: String = space.station.name if not space.in_void else app.library.text(238)
 	var system: String = cat.system_name(s.system_index) if not space.in_void else ""
 	var objective := _objective()
-	var h := (70.0 if objective.is_empty() else 94.0) * k
+	var h := (56.0 if objective.is_empty() else 74.0) * k
 	var r := Rect2(Vector2(MARGIN, MARGIN), Vector2(w, h))
 	_plate(r)
+	location_bottom = r.end.y
 	var x := r.position.x + 12 * k
 	var title := (system + "  /  " + place) if not system.is_empty() else place
 	if not space.in_void:
@@ -321,19 +339,24 @@ func _draw_location() -> void:
 		var sys: Dictionary = cat.system(s.system_index)
 		var logo := _tex("logo_%d" % int(sys.get("faction", 0)))
 		if logo != null:
-			var e := 30.0 * k
-			draw_texture_rect(logo, Rect2(Vector2(r.end.x - e - 10 * k, r.position.y + 8 * k), Vector2(e, e)), false, Color(1, 1, 1, 0.85))
+			var e := 24.0 * k
+			draw_texture_rect(logo, Rect2(Vector2(r.end.x - e - 10 * k, r.position.y + 6 * k), Vector2(e, e)), false, Color(1, 1, 1, 0.85))
 		var safety := clampi(int(sys.get("safety", 0)), 0, 3)
-		_text(Vector2(r.end.x - 150 * k, r.position.y + 54 * k), "%s: %s" % [app.library.text(220), app.library.text(225 + safety)], 10,
+		_text(Vector2(r.end.x - 150 * k, r.position.y + 44 * k), "%s: %s" % [app.library.text(220), app.library.text(225 + safety)], 10,
 			[ENEMY, NEUTRAL, UI.TEXT_DIM, FRIEND][safety], 100 * k, HORIZONTAL_ALIGNMENT_RIGHT)
-	_text(Vector2(x, r.position.y + 24 * k), title.to_upper(), 15, UI.TEXT, w - 90 * k)
+	_text(Vector2(x, r.position.y + 19 * k), title.to_upper(), 15, UI.TEXT, w - 90 * k)
 	var st: Dictionary = s.ship_stats()
-	_text(Vector2(x, r.position.y + 46 * k), "CARGO  %d / %d t" % [s.cargo_used(), int(st.cargo_capacity)], 11, LABEL)
-	_text(Vector2(x + 150 * k, r.position.y + 46 * k), UI.money(int(s.credits)), 11, UI.TEXT_GOOD)
+	_text(Vector2(x, r.position.y + 36 * k), "CARGO  %d / %d t" % [s.cargo_used(), int(st.cargo_capacity)], 11, LABEL)
+	_text(Vector2(x + 150 * k, r.position.y + 36 * k), UI.money(int(s.credits)), 11, UI.TEXT_GOOD)
 	var fill := float(s.cargo_used()) / maxf(1.0, float(st.cargo_capacity))
-	_gauge(Vector2(x, r.position.y + 54 * k), 130 * k, fill, WAYPOINT if fill < 1.0 else UI.TEXT_WARN, 20)
+	_gauge(Vector2(x, r.position.y + 42 * k), 130 * k, fill, WAYPOINT if fill < 1.0 else UI.TEXT_WARN, 20)
 	if not objective.is_empty():
-		_text(Vector2(x, r.position.y + 82 * k), objective, 12, NEUTRAL, w - 24 * k)
+		_text(Vector2(x, r.position.y + 66 * k), objective, 12, NEUTRAL, w - 24 * k)
+	_draw_readouts()
+
+## Top centre: the job's clock, the contest's score or the hold while mining.
+func _draw_readouts() -> void:
+	var s = app.game.session
 	var remaining := countdown_remaining_ms()
 	var size := area
 	# Under the radio box while someone is talking.
@@ -350,6 +373,103 @@ func _draw_location() -> void:
 		var st2: Dictionary = s.ship_stats()
 		var load: int = s.cargo_used() + int(space.mining.tons)
 		_centered(Vector2(size.x / 2.0, top + 30 * k), "%d / %d t" % [load, int(st2.cargo_capacity)], 18, UI.TEXT_WARN if load > int(st2.cargo_capacity) else UI.TEXT, true)
+
+## The original's own HUD (the default): its corner panels and state icons,
+## the armour and shield bars at the foot, the chosen secondary weapon and
+## the hull in percent once damaged. "Extended" keeps the fuller plates.
+func original_style() -> bool:
+	return str(app.setting("interface", "hud_style", "original")) == "original"
+
+func _draw_original(size: Vector2) -> void:
+	var p: Body = space.player
+	var s = app.game.session
+	var st: Dictionary = s.ship_stats()
+	# The original's 240-pixel-wide screen, scaled to this one.
+	var S := clampf(minf(size.x, size.y) / 240.0 * 0.6, 1.5, 4.0) * Prefs.hud_scale(app)
+	var ul := _tex("hud_panel_upper_left_png24")
+	var ll := _tex("hud_panel_lower_left_png24")
+	var ll_size := ll.get_size() * S if ll != null else Vector2(60, 20) * S
+	if ul != null: _mirrored_pair(ul, Vector2.ZERO, ul.get_size() * S, size.x)
+	if ll != null: _mirrored_pair(ll, Vector2(0, size.y - ll_size.y), ll_size, size.x)
+	_stack_now = maxf(_stack_now, (ul.get_height() * S if ul != null else 0.0) + _shift_by.y)
+	var ic := 15.0 * S
+	var gap := 2.0 * S
+	# Top left: booster (refilling while it recharges), autopilot, auto fire.
+	if int(st.boost_length) > 0:
+		var rate := 1.0
+		if not p.boosting and not space.boost_ready:
+			rate = clampf(1.0 + float(space.boost_time) / maxf(1.0, float(st.boost_reload)), 0.0, 1.0)
+		_icon(5 if rate < 1.0 else 4, Vector2(gap, gap), ic)
+		if rate < 1.0: _icon(4, Vector2(gap, gap), ic, rate)
+	_icon(1 if space.autopilot else 2, Vector2(gap * 2.0 + ic, gap), ic)
+	var armed := p.weapons.any(func(w): return w.kind == "gun" or w.kind == "turret")
+	if armed: _icon(14 if bool(app.setting("controls", "auto_fire", false)) else 15, Vector2(gap, gap * 2.0 + ic), ic)
+	# Top right: the cloak (draining while on, refilling after), the menu
+	# mark and the hold (full or not).
+	if space.has_cloak():
+		var frac: float = 1.0 - space.cloak_progress() if space.cloak > 0 else space.cloak_progress()
+		_icon(12, Vector2(size.x - gap - ic, gap), ic)
+		_icon(11, Vector2(size.x - gap - ic, gap), ic, frac)
+	_icon(17, Vector2(size.x - gap * 2.0 - ic * 2.0, gap), ic)
+	_icon(7 if s.cargo_used() < int(st.cargo_capacity) else 9, Vector2(size.x - gap - ic, gap * 2.0 + ic), ic)
+	# The foot: armour on the left, shield on the right, each emptying
+	# towards the middle of the screen.
+	var bar_empty := _tex("hud_hull_bar_empty_png24")
+	var bar_full := _tex("hud_hull_bar_full_png24")
+	if bar_empty != null and bar_full != null:
+		var bs := bar_empty.get_size() * S
+		var bar_y := size.y - 13.0 * S - bs.y
+		var sym_y := size.y - ll_size.y - 3.0 * S
+		if p.armor_max > 0:
+			var sym := _tex("hud_symbol_hull_png24")
+			if sym != null: draw_texture_rect(sym, Rect2(Vector2(4.0 * S, sym_y - sym.get_height() * S), sym.get_size() * S), false)
+			var x0 := ll_size.x - bs.x
+			draw_texture_rect(bar_empty, Rect2(Vector2(x0, bar_y), bs), false)
+			var f := clampf(float(p.armor) / float(p.armor_max), 0.0, 1.0)
+			var src_w := bar_full.get_width() * f
+			draw_texture_rect_region(bar_full, Rect2(Vector2(ll_size.x - src_w * S, bar_y), Vector2(src_w * S, bs.y)),
+				Rect2(bar_full.get_width() - src_w, 0, src_w, bar_full.get_height()))
+		if p.shield_max > 0:
+			var sym2 := _tex("hud_symbol_shield_png24")
+			if sym2 != null: draw_texture_rect(sym2, Rect2(Vector2(size.x - 4.0 * S - sym2.get_width() * S, sym_y - sym2.get_height() * S), sym2.get_size() * S), false)
+			# The armour bar's mirror image on the right.
+			var f2 := clampf(p.shield / float(p.shield_max), 0.0, 1.0)
+			var src_w2 := bar_full.get_width() * f2
+			_mirrored(size.x, func():
+				draw_texture_rect(bar_empty, Rect2(Vector2(ll_size.x - bs.x, bar_y), bs), false)
+				draw_texture_rect_region(bar_full, Rect2(Vector2(ll_size.x - src_w2 * S, bar_y), Vector2(src_w2 * S, bs.y)),
+					Rect2(bar_full.get_width() - src_w2, 0, src_w2, bar_full.get_height())))
+	# Bottom left: the chosen secondary weapon and what is left of it.
+	var secondary = space.current_secondary()
+	if not secondary.is_empty():
+		var sheet := _tex("items")
+		var line_y := size.y - 2.0 * S
+		if sheet != null:
+			var cell := sheet.get_width() / float(maxi(1, app.library.data.items.size()))
+			var region := Rect2(int(secondary.id) * cell, 0, cell, sheet.get_height())
+			var icon_s := region.size * S
+			draw_texture_rect_region(sheet, Rect2(Vector2(0, line_y - _px(14) - icon_s.y), icon_s), region)
+		_text(Vector2(4.0 * S, line_y), "x%d" % int(secondary.count), 13, UI.TEXT)
+	# Bottom centre: the hull once it has taken damage.
+	if p.hull_max > 0 and p.hull < p.hull_max and hull_alarm <= 0.0:
+		var percent := int(100.0 * p.hull / float(p.hull_max))
+		var ship := _tex("hud_hull_alarm_shipicon")
+		var base_y := size.y - ll_size.y + 15.0 * S
+		if ship != null: draw_texture_rect(ship, Rect2(Vector2(size.x / 2.0 - 4.0 * S - ship.get_width() * S, base_y - ship.get_height() * S), ship.get_size() * S), false)
+		_text(Vector2(size.x / 2.0, base_y), "%d%%" % percent, 14, UI.TEXT)
+	if space.turret_mode: _centered(Vector2(size.x / 2.0, size.y - ll_size.y - 8.0 * S), "TURRET VIEW", 11, FRIEND, true)
+	_draw_readouts()
+
+## A texture at `at` and its mirror image against the screen's right edge.
+func _mirrored_pair(tex: Texture2D, at: Vector2, extent: Vector2, width: float) -> void:
+	draw_texture_rect(tex, Rect2(at, extent), false)
+	_mirrored(width, func(): draw_texture_rect(tex, Rect2(at, extent), false))
+
+## Draws with x mirrored about the middle of a `width`-wide area.
+func _mirrored(width: float, paint: Callable) -> void:
+	draw_set_transform(_shift_by + Vector2(width, 0), 0.0, Vector2(-1, 1))
+	paint.call()
+	draw_set_transform(_shift_by)
 
 func _challenge() -> bool:
 	var story = space.story
@@ -376,6 +496,8 @@ func _objective() -> String:
 ## with their values, the booster and any hired pilots' remaining time.
 ## Where the vitals plate ends (touch puts the weapons under it).
 var vitals_bottom := 0.0
+## Where the location plate ends (touch stacks the vitals under it).
+var location_bottom := 0.0
 
 func _draw_vitals(size: Vector2) -> void:
 	var p: Body = space.player
@@ -383,8 +505,8 @@ func _draw_vitals(size: Vector2) -> void:
 	var st: Dictionary = s.ship_stats()
 	var w := 330.0 * k
 	var crew_time := wingmen_remaining_ms()
-	var h := (100.0 if crew_time > 0 else 82.0) * k
-	var at := Vector2(size.x - MARGIN - w, MARGIN) if not touch_layout else Vector2(MARGIN, MARGIN + 104 * k)
+	var h := (80.0 if crew_time > 0 else 64.0) * k
+	var at := Vector2(size.x - MARGIN - w, MARGIN) if not touch_layout else Vector2(MARGIN, location_bottom + 8 * k)
 	var r := Rect2(at, Vector2(w, h))
 	vitals_bottom = r.end.y
 	_plate(r)
@@ -397,18 +519,18 @@ func _draw_vitals(size: Vector2) -> void:
 		var frac := float(row[1]) / maxf(1.0, float(row[2]))
 		var color: Color = row[3]
 		if i == 0 and frac < 0.3: color = ENEMY
-		_text(Vector2(x, r.position.y + 20 * k), row[0], 10, LABEL)
+		_text(Vector2(x, r.position.y + 16 * k), row[0], 10, LABEL)
 		if int(row[2]) >= 999999:
 			# Scripted scenes make the ship indestructible; no figure to show.
-			_text(Vector2(x, r.position.y + 40 * k), "∞", 17, UI.TEXT)
+			_text(Vector2(x, r.position.y + 33 * k), "∞", 17, UI.TEXT)
 		elif int(row[2]) > 0:
 			var value := "%d" % int(row[1])
-			_text(Vector2(x, r.position.y + 40 * k), value, 17, UI.TEXT)
-			_text(Vector2(x + _width(value, 17) + 3 * k, r.position.y + 40 * k), "/%d" % int(row[2]), 10, UI.TEXT_DIM)
+			_text(Vector2(x, r.position.y + 33 * k), value, 17, UI.TEXT)
+			_text(Vector2(x + _width(value, 17) + 3 * k, r.position.y + 33 * k), "/%d" % int(row[2]), 10, UI.TEXT_DIM)
 		else:
-			_text(Vector2(x, r.position.y + 40 * k), "—", 17, UI.TEXT_DIM)
-		_gauge(Vector2(x, r.position.y + 48 * k), col - 12 * k, frac if int(row[2]) > 0 else 0.0, color, 12)
-	var y := r.position.y + 72 * k
+			_text(Vector2(x, r.position.y + 33 * k), "—", 17, UI.TEXT_DIM)
+		_gauge(Vector2(x, r.position.y + 39 * k), col - 12 * k, frac if int(row[2]) > 0 else 0.0, color, 12)
+	var y := r.position.y + 57 * k
 	var x0 := r.position.x + 12 * k
 	if int(st.boost_length) > 0:
 		var frac := 1.0
@@ -440,7 +562,7 @@ func _draw_vitals(size: Vector2) -> void:
 		_text(Vector2(cx + ic + 4 * k, y), label.replace("CLOAK ", ""), 10, color)
 	if crew_time > 0:
 		var seconds := int(ceil(crew_time / 1000.0))
-		_text(Vector2(x0, y + 20 * k), (app.library.text(152) + "  %02d:%02d" % [seconds / 60, seconds % 60]).to_upper(), 10, FRIEND)
+		_text(Vector2(x0, y + 17 * k), (app.library.text(152) + "  %02d:%02d" % [seconds / 60, seconds % 60]).to_upper(), 10, FRIEND)
 
 ## Bottom left: the weapon bank. Primaries with their reload, the secondary
 ## launcher's icon and ammunition, and the flight assists.
@@ -460,20 +582,20 @@ func _draw_weapons(size: Vector2) -> void:
 			guns[key].ready = minf(guns[key].ready, 1.0 - float(w.cooldown) / maxf(1.0, float(w.reload)))
 	var rows := guns.size() + (1 if secondary != null else 0)
 	var w := 300.0 * k
-	var h := (40.0 + maxi(1, rows) * 24.0) * k
+	var h := (30.0 + maxi(1, rows) * 20.0) * k
 	var r := Rect2(Vector2(MARGIN, size.y - MARGIN - h), Vector2(w, h))
 	# Touch: the stick has the bottom left, so the weapons sit under the
 	# vitals in the top-left column.
 	if touch_layout: r.position.y = vitals_bottom + 8 * k
 	_plate(r)
 	var x := r.position.x + 12 * k
-	var y := r.position.y + 20 * k
+	var y := r.position.y + 16 * k
 	_text(Vector2(x, y), "WEAPONS", 10, LABEL)
 	if space.turret_mode: _text(Vector2(x + 70 * k, y), "TURRET VIEW", 10, FRIEND)
 	var ic := 16.0 * k
 	_icon(1 if space.autopilot else 2, Vector2(r.end.x - 12 * k - ic * 2 - 4 * k, y - ic + 4 * k), ic)
 	_icon(14 if bool(app.setting("controls", "auto_fire", false)) else 15, Vector2(r.end.x - 12 * k - ic, y - ic + 4 * k), ic)
-	y += 24 * k
+	y += 20 * k
 	if rows == 0:
 		_text(Vector2(x, y), "—", 13, UI.TEXT_DIM)
 	for id in guns:
@@ -481,7 +603,7 @@ func _draw_weapons(size: Vector2) -> void:
 		var name: String = app.catalogue.item_name(int(id)) if int(id) >= 0 else "Gun"
 		_text(Vector2(x, y), ("%d × " % int(g.count)) + name, 13, UI.TEXT, 190 * k)
 		_gauge(Vector2(r.end.x - 82 * k, y - 8 * k), 70 * k, g.ready, ACCENT if g.ready >= 1.0 else UI.TEXT_DIM, 8)
-		y += 24 * k
+		y += 20 * k
 	if secondary != null:
 		var sheet := _tex("items")
 		var ix := x
@@ -505,34 +627,34 @@ func _draw_target(size: Vector2) -> void:
 	var w := 340.0 * k
 	var ship := t.is_ship()
 	var cargo: Dictionary = space.scanned_cargo() if ship else {}
-	var h := (72.0 if ship else 48.0) * k + (18.0 * k if not cargo.is_empty() else 0.0)
+	var h := (58.0 if ship else 40.0) * k + (16.0 * k if not cargo.is_empty() else 0.0)
 	var r := Rect2(Vector2(size.x / 2.0 - w / 2.0, size.y - MARGIN - h), Vector2(w, h))
 	var color := _standing_color(t)
 	_plate(r, color)
 	var x := r.position.x + 12 * k
 	var label: String = t.name if not t.name.is_empty() else app.library.text(270)
-	_text(Vector2(x, r.position.y + 22 * k), label.to_upper(), 14, color, w - 120 * k)
+	_text(Vector2(x, r.position.y + 18 * k), label.to_upper(), 14, color, w - 120 * k)
 	var dist := p.pos.distance_to(t.pos) if t.kind != Body.Kind.STAR else -1.0
 	if dist >= 0.0:
-		_text(Vector2(r.end.x - 112 * k, r.position.y + 22 * k), _metres(dist), 13, UI.TEXT, 100 * k, HORIZONTAL_ALIGNMENT_RIGHT)
+		_text(Vector2(r.end.x - 112 * k, r.position.y + 18 * k), _metres(dist), 13, UI.TEXT, 100 * k, HORIZONTAL_ALIGNMENT_RIGHT)
 	var status := "LOCKED" if space.locked else "SCANNING %d%%" % int(clampf(space.lock_time / space.lock_needed, 0.0, 1.0) * 100)
-	_text(Vector2(x, r.position.y + 40 * k), status, 10, FRIEND if space.locked else LABEL)
+	_text(Vector2(x, r.position.y + 32 * k), status, 10, FRIEND if space.locked else LABEL)
 	if ship:
-		if t.disabled: _text(Vector2(x + 110 * k, r.position.y + 40 * k), "EMP DISABLED", 10, SHIELD_COLOR)
+		if t.disabled: _text(Vector2(x + 110 * k, r.position.y + 32 * k), "EMP DISABLED", 10, SHIELD_COLOR)
 		var gw := (w - 36 * k) / 2.0
 		var hull_frac := float(t.hull + t.armor) / maxf(1.0, float(t.hull_max + t.armor_max))
-		_text(Vector2(x, r.position.y + 60 * k), "HULL", 9, LABEL)
-		_gauge(Vector2(x + 34 * k, r.position.y + 53 * k), gw - 34 * k, hull_frac, ENEMY if t.hostile else HULL_COLOR, 14)
+		_text(Vector2(x, r.position.y + 49 * k), "HULL", 9, LABEL)
+		_gauge(Vector2(x + 34 * k, r.position.y + 42 * k), gw - 34 * k, hull_frac, ENEMY if t.hostile else HULL_COLOR, 14)
 		if t.shield_max > 0:
-			_text(Vector2(x + gw + 12 * k, r.position.y + 60 * k), "SHLD", 9, LABEL)
-			_gauge(Vector2(x + gw + 46 * k, r.position.y + 53 * k), gw - 34 * k, t.shield / maxf(1.0, float(t.shield_max)), SHIELD_COLOR, 14)
+			_text(Vector2(x + gw + 12 * k, r.position.y + 49 * k), "SHLD", 9, LABEL)
+			_gauge(Vector2(x + gw + 46 * k, r.position.y + 42 * k), gw - 34 * k, t.shield / maxf(1.0, float(t.shield_max)), SHIELD_COLOR, 14)
 		if not cargo.is_empty():
 			var parts: Array = []
 			var pairs: Array = cargo.get("pairs", [])
 			for p_i in range(0, pairs.size() - 1, 2):
 				if int(pairs[p_i + 1]) > 0: parts.append("%d × %s" % [int(pairs[p_i + 1]), app.catalogue.item_name(int(pairs[p_i]))])
 			var description := "—" if parts.is_empty() else ",  ".join(parts)
-			_text(Vector2(x, r.position.y + 82 * k), "CARGO  " + description, 11, UI.TEXT_GOOD, w - 24 * k)
+			_text(Vector2(x, r.position.y + 67 * k), "CARGO  " + description, 11, UI.TEXT_GOOD, w - 24 * k)
 
 func _draw_tractor(centre: Vector2) -> void:
 	var tractor: Dictionary = space.tractor_status()
@@ -639,13 +761,17 @@ func _draw_markers(size: Vector2) -> void:
 		if at != null and Rect2(Vector2.ZERO, size).has_point(at):
 			if is_target:
 				_draw_tex("hud_lockon_" + _standing(b), at)
+				if b.is_ship() and dist <= NEAR_BARS: _draw_ship_bars(b, at)
 				if not space.locked and space.tractor_status().is_empty():
 					var f := int(clampf(space.lock_time / space.lock_needed, 0.0, 0.999) * 32)
 					_draw_region("hud_scanprocess_anim_png24", Rect2(f * 25, 0, 25, 25), at)
 			elif b.is_ship():
 				if dist > RADAR_REACH: continue
-				var kind := _standing(b)
-				_draw_tex("bracket_%s_far" % ("enemy" if kind == "enemy" else ("friend" if kind == "friend" else "waypoint")), at)
+				# Near ships carry the original's two bars instead of a bracket.
+				if dist <= NEAR_BARS: _draw_ship_bars(b, at)
+				else:
+					var kind := _standing(b)
+					_draw_tex("bracket_%s_far" % ("enemy" if kind == "enemy" else ("friend" if kind == "friend" else "waypoint")), at)
 			elif nav:
 				draw_arc(at, 7 * k, 0, TAU, 16, Color(color, 0.8), 1.5, true)
 			elif on_course:
@@ -659,6 +785,26 @@ func _draw_markers(size: Vector2) -> void:
 		elif is_target or (threat and dist < RADAR_REACH) or b == space.station:
 			_edge_arrow(size, edge, world, color, is_target, _metres(dist) if is_target and dist >= 0.0 else "")
 	_draw_waypoint(size, edge)
+
+## Within this range (the original's 24,000 units) a ship shows its bars.
+const NEAR_BARS := 24000.0
+
+## The original's pair of 16-pixel bars beside a nearby ship (hud_bars:
+## lit/dark pairs, red enemy, blue EMP, orange neutral, green friend): its
+## hull in its standing's colour, and its EMP charge in blue, each filled
+## from the bottom.
+func _draw_ship_bars(b: Body, at: Vector2) -> void:
+	var sheet := _tex("hud_bars")
+	if sheet == null: return
+	var frame := {"enemy": 0, "friend": 6}.get(_standing(b), 4) as int
+	var hull := float(b.hull) / maxf(1.0, float(b.hull_max))
+	var emp := float(b.emp) / maxf(1.0, float(b.emp_max)) if b.emp_max > 0 else 1.0
+	for bar in [[frame, hull, 10.0], [2, emp, 15.0]]:
+		var origin: Vector2 = at + Vector2(float(bar[2]), -8.0) * SCALE
+		draw_texture_rect_region(sheet, Rect2(origin, Vector2(2, 16) * SCALE), Rect2(int(bar[0]) * 2 + 2, 0, 2, 16))
+		var lit := clampf(float(bar[1]), 0.0, 1.0) * 16.0
+		if lit > 0.0:
+			draw_texture_rect_region(sheet, Rect2(origin + Vector2(0, 16.0 - lit) * SCALE, Vector2(2, lit) * SCALE), Rect2(int(bar[0]) * 2, 16.0 - lit, 2, lit))
 
 ## The mission route's next point: the original's waypoint lock-on frame
 ## with its distance in view, an edge arrow towards it otherwise.
@@ -752,6 +898,7 @@ var radio_face := {}
 ## allowing, the note of which keys it means here.
 func _radio_rect(size: Vector2, line: Dictionary) -> Rect2:
 	var band := Vector2(20.0, size.x - 20.0)
+	var top := 12.0
 	if space.story == null or not space.story.hud_hidden:
 		var safe := SafeMargins.margins(size, touch_layout)
 		band.x = safe.side + MARGIN + 330.0 * k + 10.0
@@ -760,9 +907,13 @@ func _radio_rect(size: Vector2, line: Dictionary) -> Rect2:
 			band.y = size.x - safe.side - MARGIN - 10.0
 			for r in touch.buttons.values():
 				if r.position.y < 150.0 and r.position.x > size.x / 2.0: band.y = minf(band.y, touch.position.x + r.position.x - 10.0)
-		if band.y - band.x < 420.0: band = Vector2(20.0, size.x - 20.0)
+		if band.y - band.x < 420.0:
+			# No room between the panels (an upright phone): the width of
+			# the screen, just under them.
+			band = Vector2(20.0, size.x - 20.0)
+			top = top_stack + 8.0
 	var w := minf(band.y - band.x, 760.0)
-	var rect := Rect2(Vector2((band.x + band.y - w) / 2.0, 12), Vector2(w, 126))
+	var rect := Rect2(Vector2((band.x + band.y - w) / 2.0, top), Vector2(w, 126))
 	if str(line.get("text", "")) != _note_for:
 		_note_for = str(line.get("text", ""))
 		_note = preload("res://src/screens/help_panel.gd").key_note(app, _note_for)
@@ -831,7 +982,14 @@ func _draw_radar(size: Vector2) -> void:
 	if touch_layout and space.mining != null: return
 	var r := (92.0 if not touch_layout else 66.0) * k
 	var c := Vector2(size.x - MARGIN - r - 6 * k, size.y - MARGIN - r - 6 * k)
-	if touch_layout: c = Vector2(size.x - MARGIN - r - 6 * k, 92 * k + r)
+	if touch_layout:
+		# Under whatever buttons hold the top-right corner, caption included.
+		var top := 92.0 * k
+		if touch != null:
+			for b in touch.buttons.values():
+				if b.position.y < 150.0 and b.position.x > size.x / 2.0: top = maxf(top, touch.position.y + b.end.y - _shift_by.y + 24.0 * k)
+		c = Vector2(size.x - MARGIN - r - 6 * k, top + r)
+	if c.y + _shift_by.y < self.size.y * 0.35: _stack_now = maxf(_stack_now, c.y + r + 6 * k + _shift_by.y)
 	draw_circle(c, r + 6 * k, PANEL)
 	draw_arc(c, r + 6 * k, 0, TAU, 96, Color(UI.BORDER, 0.9), 1.0, true)
 	draw_arc(c, r, 0, TAU, 96, Color(ACCENT, 0.55), 1.0, true)
@@ -932,6 +1090,9 @@ func game_over(continue_label: String, on_continue: Callable, on_menu: Callable)
 	(box.get_child(0) as Control).grab_focus.call_deferred()
 
 func set_paused(on: bool) -> void:
+	# Already up: a second pause (a dropdown taking focus reads as the window
+	# losing it) must not rebuild the menu under an open Options page.
+	if on and paused and pause_layer != null: return
 	paused = on
 	if pause_layer != null:
 		pause_layer.queue_free()

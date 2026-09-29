@@ -26,16 +26,17 @@ func setup(lib, station_id: int, faction: int, ship_index: int, ship_faction: in
 			var id: int = list[r.next_int(list.size() - 3)]
 			if i == 5: id = list[list.size() - 2]
 			elif i == 1: id = list[list.size() - 1]
-			var seg := Assembly.figure(lib, lib.model_name(id))
+			var seg := Assembly.figure(lib, lib.model_name(id), 0, "", true)
 			seg.transform = Transform3D(Assembly.basis(0, 2048, 0), Assembly.position([0, 0, (i - 1) << 12]))
 			add_child(seg)
 		var end_id: int = list[list.size() - 3]
-		var end := Assembly.figure(lib, lib.model_name(end_id))
+		var end := Assembly.figure(lib, lib.model_name(end_id), 0, "", true)
 		end.transform = Transform3D(Assembly.basis(0, 2048, 0), Assembly.position([0, 0, 8192]))
 		add_child(end)
 	var lift := 0
 	if offsets is Array and ship_index < offsets.size(): lift = int(offsets[ship_index])
 	ship_node = Assembly.ship(lib, ship_index, ship_faction)
+	# Parked on the pad the engines are out, as the original shows it.
 	ship_node.get_node("Boosters").visible = false
 	ship_node.transform = Transform3D(Assembly.basis(0, 2048, 0), Assembly.position([0, 1200, 10240 - lift + 100]))
 	add_child(ship_node)

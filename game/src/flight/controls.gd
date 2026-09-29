@@ -10,6 +10,18 @@ var mouse_steer := true
 ## resting cursor never turns the ship.
 var mouse_owns := false
 const MOUSE_TAKEOVER_PX := 6.0
+## While flying with the mouse the pointer is captured (as in Deep) and its
+## motion turns the ship directly: it is queued and paid out each tick no
+## faster than the ship can turn, with a short backlog, so the ship follows
+## the hand and flies straight the moment it stops.
+var captured := false
+var mouse_turn := Vector2.ZERO
+## Alt held with the captured mouse: where the view is swung to.
+var mouse_look := Vector2.ZERO
+## Pixels of motion that make one tick's full-rate turn, and the most that
+## may wait (a fifth of a second of turning).
+const MOUSE_PX_PER_TICK := 4.0
+const MOUSE_BACKLOG_TICKS := 12.0
 var fire_was := false
 var pressed := {}
 ## The eased steering of the smooth helm.
@@ -41,12 +53,20 @@ func _ready() -> void:
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:
-		if event.relative.length() >= MOUSE_TAKEOVER_PX: mouse_owns = true
+		if captured:
+			if Input.is_key_pressed(KEY_ALT):
+				mouse_look = (mouse_look + event.relative / 240.0).limit_length(1.0)
+			else:
+				mouse_turn = (mouse_turn + event.relative * Prefs.mouse_sensitivity(app)).limit_length(MOUSE_PX_PER_TICK * MOUSE_BACKLOG_TICKS)
+			mouse_owns = true
+		elif event.relative.length() >= MOUSE_TAKEOVER_PX: mouse_owns = true
 	elif event is InputEventJoypadMotion:
 		if event.axis in [JOY_AXIS_LEFT_X, JOY_AXIS_LEFT_Y] and absf(event.axis_value) > Prefs.deadzone(app): mouse_owns = false
 	elif event is InputEventKey or event is InputEventJoypadButton:
 		if event.pressed:
-			for action in ["steer_left", "steer_right", "steer_up", "steer_down"]:
+			# Strafing keys leave the helm with the mouse.
+			var steering: Array = ["steer_up", "steer_down"] if strafing() else ["steer_left", "steer_right", "steer_up", "steer_down"]
+			for action in steering:
 				if event.is_action(action): mouse_owns = false
 
 ## Screens are recreated on every arrival. Never accumulate duplicate bindings.
@@ -71,7 +91,22 @@ static func ensure_actions() -> void:
 	trigger.axis_value = 1.0
 	if not InputMap.action_has_event("fire", trigger): InputMap.action_add_event("fire", trigger)
 
+## How far the captured pointer's stick reaches, in pixels: a full turn.
+func stick_radius() -> float:
+	var size := get_viewport().get_visible_rect().size if is_inside_tree() else Vector2(1280, 800)
+	return minf(size.x, size.y) * 0.35 / Prefs.mouse_sensitivity(app)
+
+## Deep's strafe: when something else turns the ship (the captured mouse),
+## left and right slide it sideways instead. Auto, Always or Never.
+func strafing() -> bool:
+	match str(app.setting("controls", "strafe", "auto")):
+		"always": return true
+		"never": return false
+	return captured and mouse_steer
+
 func reset() -> void:
+	mouse_turn = Vector2.ZERO
+	mouse_look = Vector2.ZERO
 	fire_was = false
 	helm = Vector2.ZERO
 	pressed.clear()
@@ -89,6 +124,10 @@ func state(view) -> Dictionary:
 	var virtual: Dictionary = touch.sample() if is_instance_valid(touch) else {}
 	var invert := -1.0 if bool(app.setting("controls", "invert", false)) else 1.0
 	var yaw := Input.get_axis("steer_left", "steer_right")
+	var strafe := 0.0
+	if strafing():
+		strafe = yaw
+		yaw = 0.0
 	var pitch := Input.get_axis("steer_down", "steer_up") * invert
 	var lean := Prefs.tilt(app)
 	yaw = clampf(yaw + float(virtual.get("yaw", 0.0)) + lean.x, -1.0, 1.0)
@@ -108,9 +147,17 @@ func state(view) -> Dictionary:
 		var vp := get_viewport()
 		var size := vp.get_visible_rect().size
 		var m := vp.get_mouse_position() - size / 2.0
-		var r := minf(size.x, size.y) * 0.35 / Prefs.mouse_sensitivity(app)
+		var r := stick_radius()
 		var v := m / r
-		if Input.is_key_pressed(KEY_ALT):
+		if captured:
+			if Input.is_key_pressed(KEY_ALT): look = mouse_look
+			else: mouse_look = Vector2.ZERO
+			var turn := Vector2(clampf(mouse_turn.x / MOUSE_PX_PER_TICK, -1.0, 1.0), clampf(mouse_turn.y / MOUSE_PX_PER_TICK, -1.0, 1.0))
+			mouse_turn -= turn * MOUSE_PX_PER_TICK
+			if turn.length() > 0.02 and absf(yaw) < 0.01 and absf(pitch) < 0.01:
+				yaw = turn.x
+				pitch = -turn.y * invert
+		elif Input.is_key_pressed(KEY_ALT):
 			look = Vector2(clampf(v.x, -1.0, 1.0), clampf(v.y, -1.0, 1.0))
 		elif mouse_owns and v.length() > 0.08 and absf(yaw) < 0.01 and absf(pitch) < 0.01:
 			yaw = clampf(v.x, -1.0, 1.0)
@@ -133,7 +180,7 @@ func state(view) -> Dictionary:
 	var auto_toggled: bool = _just("auto_fire") or bool(virtual.get("auto_fire", false))
 	if auto_toggled:
 		app.set_setting("controls", "auto_fire", not bool(app.setting("controls", "auto_fire", false)))
-	return {"yaw": yaw, "pitch": pitch, "fire": fire, "fire_pressed": fire_pressed, "secondary": secondary,
+	return {"yaw": yaw, "pitch": pitch, "strafe": strafe, "fire": fire, "fire_pressed": fire_pressed, "secondary": secondary,
 		"boost": Input.is_action_pressed("boost") or bool(virtual.get("boost", false)),
 		"next_target": _just("next_target") or bool(virtual.get("next_target", false)),
 		"autopilot": _just("autopilot") or bool(virtual.get("autopilot", false)),

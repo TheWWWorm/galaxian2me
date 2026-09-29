@@ -4,8 +4,9 @@ extends RefCounted
 ## direction with world up, never rolled about their own axes) and turn by
 ## blending their direction towards the goal at `handling` 4096ths of a unit
 ## per millisecond: 2 when cruising, 1.3 while boosting. Every five seconds
-## they reconsider their target (a 30% chance of a random enemy within the
-## 50 000-unit sight box) and may stray, holding their heading for a while.
+## they reconsider their target (the player for ships set against them,
+## with a 30% chance of another ship they fight, all within the 50 000-unit
+## sight box) and may stray, holding their heading for a while.
 ## Inside 8 000 units of the target they swing towards their own right side,
 ## breaking off rather than ramming, and fire once the target sits within a
 ## narrow cone and 35 000 units. Boosts come by chance or after losing 40%
@@ -78,6 +79,10 @@ static func step(space, b, delta: float, ms: int) -> void:
 		_choose_target(space, b)
 		# A ship that strayed last time always resumes its pursuit.
 		ai.stray = not bool(ai.get("stray", false)) and space.rng.randi_range(0, 99) < 20
+	elif ai.get("target") == null:
+		# Between the five-second reviews a ship without a target takes the
+		# first one in sight at once, as PlayerFighter does every frame.
+		_choose_target(space, b, false)
 	var tgt = ai.get("target")
 	var hired := bool(ai.get("wingman", false))
 	if tgt != null:
@@ -171,7 +176,6 @@ static func step(space, b, delta: float, ms: int) -> void:
 					var w: Dictionary = b.weapons[index]
 					if int(w.cooldown) > 0: continue
 					if hired and not Wingmen.can_fire(space, b, w, index): continue
-					if to2.length() > float(w.life) * float(w.speed) * 0.9: continue
 					space.npc_fire(b, w)
 
 ## The largest axis distance, as the original's box tests use.
@@ -286,7 +290,11 @@ static func _swerve(b, off: Vector3, ms: int, delta: float) -> void:
 	if side.length() < off.length() * 0.2: side = b.basis.x
 	turn_towards(b, fwd + side.normalized() * 1.5, AVOID_HANDLING, ms, delta)
 
-static func _choose_target(space, b) -> void:
+## PlayerFighter's choice: a ship set against the player goes for the
+## player, but at each five-second review a 30% chance sends it after the
+## first ship of a race it fights instead; other ships take the first such
+## ship. Only targets inside the 50 000-unit sight box count.
+static func _choose_target(space, b, review := true) -> void:
 	if bool(b.ai.get("wingman", false)):
 		var focus = Wingmen.focus_target(space, b)
 		if focus != null:
@@ -302,13 +310,19 @@ static func _choose_target(space, b) -> void:
 		# Debris (no faction) is the player's to clear, not a ship to fight.
 		if other.faction < 0: continue
 		if _enemies(b, other): enemies.append(other)
-	var current = b.ai.get("target")
-	if current != null and current.alive and space.rng.randi_range(0, 99) >= 30: return
 	var near: Array = enemies.filter(func(e): return _box(e.pos - b.pos) < RANGE)
 	if near.is_empty():
 		b.ai.target = null
 		return
-	b.ai.target = near[space.rng.randi_range(0, near.size() - 1)]
+	if bool(b.ai.get("wingman", false)):
+		b.ai.target = near[0]
+		return
+	var others: Array = near.filter(func(e): return e != space.player)
+	var wants_player: bool = near.has(space.player)
+	if wants_player and (others.is_empty() or not review or space.rng.randi_range(0, 99) >= 30):
+		b.ai.target = space.player
+	else:
+		b.ai.target = others[0] if not others.is_empty() else space.player
 
 static func _enemies(a, b) -> bool:
 	# Hired pilots choose enemies of the player, even if the pilot's race

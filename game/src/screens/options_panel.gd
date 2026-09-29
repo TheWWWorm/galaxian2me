@@ -21,7 +21,9 @@ func _init() -> void:
 
 func _ready() -> void:
 	title = app.library.text(3)
-	custom_minimum_size = Vector2(620, 520)
+	# Roomy on a desktop, never wider or taller than the window.
+	var room := get_viewport_rect().size
+	custom_minimum_size = Vector2(minf(760.0, room.x - 32.0), minf(600.0, room.y - 60.0))
 	var outer := VBoxContainer.new()
 	outer.add_theme_constant_override("separation", 8)
 	add_child(outer)
@@ -156,9 +158,11 @@ func _display_page() -> void:
 	_note("The original's view is about %d°." % int(round(Prefs.CLASSIC_FOV)))
 	_toggle("Space dust", "graphics", "dust", true, sync)
 	_toggle("Lens flare", "graphics", "lens_flare", true, sync)
-	_toggle("Smooth textures", "display", "smooth_textures", false, func(_on):
+	_toggle("Smooth ship textures", "display", "smooth_textures", false, func(_on):
 		app.activate(app.library.id))
-	_note("Off keeps the original's crisp pixelated textures.")
+	_toggle("Smooth station textures", "display", "smooth_station_textures", bool(app.setting("display", "smooth_textures", false)), func(_on):
+		app.activate(app.library.id))
+	_note("Off keeps the original's crisp pixelated textures. Ships covers everything outside the stations: ships, asteroids, crates.")
 
 func _controls_page() -> void:
 	_new_page("Controls")
@@ -171,6 +175,13 @@ func _controls_page() -> void:
 	if not OS.has_feature("mobile"):
 		_toggle("Mouse steering", "controls", "mouse", true)
 		_slider("Mouse sensitivity", "controls", "mouse_sensitivity", 1.0, 0.3, 3.0, 0.1)
+		_toggle("Capture the pointer in flight", "controls", "capture_mouse", true)
+		_note("Moving the mouse turns the ship directly, as fast as it can turn; menus and pauses free the pointer.")
+		var strafe_modes := ["auto", "always", "never"]
+		_choice("Left / right keys", ["Strafe while the mouse steers", "Always strafe", "Always turn"],
+			maxi(0, strafe_modes.find(str(app.setting("controls", "strafe", "auto")))),
+			func(i): app.set_setting("controls", "strafe", strafe_modes[i]))
+		_note("Strafing slides the ship sideways while the mouse turns it, as in Deep.")
 	_toggle(app.library.text(13), "controls", "auto_fire", false)
 	if OS.has_feature("mobile"):
 		_toggle("Steer by tilting", "controls", "tilt", false, func(on):
@@ -244,6 +255,10 @@ func _controls_page() -> void:
 func _interface_page() -> void:
 	_new_page("Interface")
 	_group("Flight display")
+	var styles := ["original", "extended"]
+	_choice("Flight display", ["Original", "Extended"], maxi(0, styles.find(str(app.setting("interface", "hud_style", "original")))), func(i):
+		app.set_setting("interface", "hud_style", styles[i]))
+	_note("Original: the game's own corner panels, icons and bars. Extended: plates with the location, figures for hull, armour and shield, the weapon bank, the target and a radar scope.")
 	_slider("HUD size", "interface", "hud_scale", 1.0, 0.7, 1.6, 0.05, true)
 	_slider("HUD opacity", "interface", "hud_opacity", 1.0, 0.35, 1.0, 0.05, true)
 	_toggle("Control hints", "interface", "hints", true)
@@ -253,13 +268,15 @@ func _interface_page() -> void:
 	box.add_child(UI.button("Show all help pop-ups again", func():
 		preload("res://src/presentation/tips.gd").reset(app)
 		_build()))
+	_toggle("Radar scope", "interface", "radar_scope", true)
+	_note("A round radar in a corner of the flight display. Not part of the original, which marks ships only on screen and at its edges.")
 	_toggle("Object labels", "interface", "labels", true)
 	_note("Names and distances beside stations, gates and the target.")
 	_toggle("Screen transitions", "interface", "transitions", true)
 	_note("A short fade when launching, docking and jumping.")
 	_group("Menus")
 	_slider("Text size", "interface", "text_size", 16, 13, 24, 1, false, "%d px", func(_v):
-		app.get_tree().root.theme = UI.make_theme(Prefs.text_size(app)))
+		app.set_ui_theme(UI.make_theme(Prefs.text_size(app))))
 	_group("Accessibility")
 	_toggle("Colour-blind friendly colours", "access", "colour_safe", false)
 	_note("Orange enemies and blue friends instead of red and green, in the HUD and radar.")
@@ -279,6 +296,21 @@ func _game_page() -> void:
 			app.activate(app.library.id)
 			_build())
 	box.add_child(UI.button("Import a different JAR…", func(): app.show_import()))
+	# The original lists its credits under Options.
+	box.add_child(UI.button(lib.text(21), _open_over.bind(preload("res://src/screens/credits_panel.gd"))))
+	box.add_child(UI.button("Mods", _open_over.bind(preload("res://src/screens/mods_panel.gd"))))
+
+## Opens another page in place of Options, coming back here when it closes.
+func _open_over(script) -> void:
+	var p = script.new()
+	p.app = app
+	var holder := get_parent()
+	visible = false
+	p.closed.connect(func():
+		if is_instance_valid(p) and not p.is_queued_for_deletion(): p.queue_free()
+		visible = true
+		_build())
+	holder.add_child(p)
 
 # ------------------------------------------------------------------ rows
 
@@ -332,7 +364,7 @@ func _choice(text: String, names: Array, current: int, choose: Callable) -> Opti
 	var pick := OptionButton.new()
 	for n in names: pick.add_item(str(n))
 	pick.selected = current
-	pick.custom_minimum_size.x = 160
+	pick.custom_minimum_size.x = 210
 	pick.item_selected.connect(choose)
 	row.add_child(pick)
 	box.add_child(row)

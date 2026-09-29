@@ -1,4 +1,4 @@
-extends HBoxContainer
+extends BoxContainer
 ## The player's ship: its slots by category with what is mounted, and the
 ## original's actions for a slot (mount from the hold, demount, sell).
 
@@ -49,11 +49,13 @@ func _fill() -> void:
 	for c in 4:
 		var slots: Array = game.session.equipment[c]
 		if slots.is_empty(): continue
-		slots_list.add_child(UI.label(app.library.text(HEADINGS[c]), 15, UI.TEXT_DIM))
+		# The original heads each group with its filled and total slots.
+		var filled := slots.filter(func(x): return x != null).size()
+		slots_list.add_child(UI.label("%s (%d/%d)" % [app.library.text(HEADINGS[c]), filled, slots.size()], 15, UI.TEXT_DIM))
 		for i in slots.size():
 			var e = slots[i]
 			var icon: Control = Common.item_icon(app.library, int(e.id)) if e != null else TextureRect.new()
-			var text: String = (cat.item_name(int(e.id)) + ("  ×%d" % int(e.count) if int(e.count) > 1 else "")) if e != null else "— " + app.library.text(141) + " —"
+			var text: String = (cat.item_name(int(e.id)) + ("  ×%d" % int(e.count) if int(e.count) > 1 else "")) if e != null else app.library.text(69)
 			slots_list.add_child(Common.row(icon, text, "", _select.bind(c, i)))
 	var st: Dictionary = game.session.ship_stats()
 	slots_list.add_child(HSeparator.new())

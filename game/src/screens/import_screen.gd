@@ -71,7 +71,9 @@ window.gof2Files = {
 	dialog = FileDialog.new()
 	dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
 	dialog.access = FileDialog.ACCESS_FILESYSTEM
-	dialog.filters = PackedStringArray(["*.jar ; Java MIDlet archives", "* ; All files"])
+	# Android's picker filters by media type, which a .jar rarely carries.
+	if not OS.has_feature("android"):
+		dialog.filters = PackedStringArray(["*.jar ; Java MIDlet archives", "* ; All files"])
 	dialog.use_native_dialog = true
 	dialog.file_selected.connect(import_file)
 	add_child(dialog)
@@ -115,6 +117,19 @@ func import_file(path: String) -> void:
 	status.text = "Starting…"
 	status.add_theme_color_override("font_color", UI.TEXT_DIM)
 	importer = Importer.new()
+	if OS.has_feature("android") and path != WEB_JAR:
+		# The system picker hands over a document address the archive reader
+		# cannot open; its bytes are copied into the app's own storage first.
+		var bytes := FileAccess.get_file_as_bytes(path)
+		var copy := FileAccess.open(WEB_JAR, FileAccess.WRITE)
+		if bytes.is_empty() or copy == null:
+			choose.disabled = false
+			bar.visible = false
+			_show_error("That file could not be read. Choose the game's .jar file.")
+			return
+		copy.store_buffer(bytes)
+		copy.close()
+		path = WEB_JAR
 	if OS.has_feature("web") and not OS.has_feature("threads"):
 		# A browser build without threads converts on the main thread: say
 		# so first, as the page stops responding until it is done.
@@ -135,7 +150,7 @@ func _process(_delta: float) -> void:
 	if thread.is_alive(): return
 	var result: Dictionary = thread.wait_to_finish()
 	thread = null
-	if OS.has_feature("web"): DirAccess.remove_absolute(WEB_JAR)
+	if OS.has_feature("web") or OS.has_feature("android"): DirAccess.remove_absolute(WEB_JAR)
 	_finish(result)
 
 func _finish(result: Dictionary) -> void:

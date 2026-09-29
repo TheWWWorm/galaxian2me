@@ -54,6 +54,8 @@ var ore := -1
 var ore_class := 0
 var size := 0
 var boosting := false
+## Engine flames; scripted scenes put them out (the original's setExhaustVisible).
+var exhaust := true
 var anim_time := 0.0
 var dead_timer := 0.0
 var wreck := ""

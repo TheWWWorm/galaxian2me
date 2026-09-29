@@ -1,4 +1,4 @@
-extends HBoxContainer
+extends BoxContainer
 ## The shop: the station's shelf on the left, the player's hold on the right,
 ## and the selected item's details with buy/sell controls.
 
@@ -37,6 +37,10 @@ func _ready() -> void:
 	detail = VBoxContainer.new()
 	detail.add_theme_constant_override("separation", 6)
 	info.add_child(detail)
+	# The original notes the lowest and highest prices seen as the hangar opens.
+	var here: int = game.session.system_index
+	for e in game.shelf(): game.session.record_price(int(e.id), int(e.price), here)
+	for k in game.session.cargo.keys(): game.session.record_price(int(k), game.price_here(int(k)), here)
 	game.changed.connect(_fill)
 	_fill()
 
@@ -88,6 +92,13 @@ func _detail() -> void:
 	for r in Common.fact_rows(app.library, cat, id, fitted): detail.add_child(r)
 	var price: int = game.price_here(id)
 	detail.add_child(UI.label("%s: %s" % [app.library.text(36), UI.money(price)], 16, UI.TEXT_GOOD))
+	var rec: Array = game.session.price_record(id)
+	if rec.size() == 4:
+		for side in [[0, 93, 95], [2, 94, 96]]:
+			var system := int(rec[side[0] + 1])
+			var line: String = app.library.text(side[2] if system == game.session.system_index else side[1])
+			line = line.replace("#C", str(int(rec[side[0]]))).replace("#S", str(cat.system(system).get("name", "?")))
+			detail.add_child(UI.paragraph(line, 13, UI.TEXT_DIM))
 	var available: int = _available()
 	if available <= 0: return
 	amount = clampi(amount, 1, available)

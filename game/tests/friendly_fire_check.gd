@@ -58,7 +58,7 @@ func run() -> void:
 	check(not b.hostile, "the others still hold their fire")
 	check(not sim.radio.is_empty() and [247, 248, 249].any(func(id): return sim.radio.text == app.library.text(id)),
 		"over the radio a Terran warns you off")
-	check(sim.radio.name == app.library.text(819 + 23) and sounds.has("fx_message_02"), "with the race's name and the radio chime")
+	check(sim.radio.name == app.library.text(819 + 23) and not sounds.has("fx_message_02"), "with the race's name, and silently as in the original")
 	var first: Dictionary = sim.radio
 	sim._harm(a, 100.0, 0.0, sim.player)
 	check(b.hostile and b.ai.get("target") == sim.player, "past two thirds every Terran comes for you")

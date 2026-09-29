@@ -1,4 +1,4 @@
-extends HBoxContainer
+extends BoxContainer
 ## The ship dealer: hulls on offer at this station, their figures, and the
 ## purchase (the current hull is traded in; its equipment goes to the hold).
 

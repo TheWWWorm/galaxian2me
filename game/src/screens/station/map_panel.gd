@@ -1,4 +1,4 @@
-extends HBoxContainer
+extends BoxContainer
 ## The galaxy map: known systems at their map positions with the gate links
 ## between them, the systems' stations, and departure towards a chosen
 ## destination. Only systems linked to the current system's jump gate can be
@@ -9,6 +9,9 @@ const UI := preload("res://src/presentation/ui.gd")
 const Common := preload("res://src/screens/station/common.gd")
 const PortalView := preload("res://src/presentation/map_portal_view.gd")
 const Navigation := preload("res://src/simulation/navigation.gd")
+const JavaRandom := preload("res://src/simulation/java_random.gd")
+## The original's planet sizes on its system map, by planet picture.
+const PLANET_SIZES := [320, 192, 256, 256, 192, 256, 192, 192, 320, 256, 192, 192, 320, 256, 320, 256, 256, 256, 320, 192]
 
 var station
 var app
@@ -21,6 +24,12 @@ var portal_view: PortalView
 var flight = null
 var flight_mode := "route"
 var search: LineEdit
+var frame: UI.Frame
+## The system shown close up (the original's system map), or -1 on the chart.
+var system_view := -1
+## The station picked in the system view, by its place in the system's list.
+var planet := 0
+var _orbits := {}
 
 ## Wheel or pinch zooms about the pointer, a drag pans, and a click or tap
 ## that did not move picks the system under it.
@@ -63,6 +72,12 @@ class MapCanvas extends Control:
 				elif pressed:
 					pressed = false
 					if not dragged and event.button_index == MOUSE_BUTTON_LEFT: panel._pick(self, event.position)
+					elif not dragged and event.button_index == MOUSE_BUTTON_RIGHT and panel.system_view >= 0: panel.close_system()
+				# A double click opens the system, or picks the station as a destination.
+				if event.pressed and event.double_click and event.button_index == MOUSE_BUTTON_LEFT:
+					panel._pick(self, event.position)
+					panel._accept()
+					accept_event()
 		elif event is InputEventMouseMotion and pressed and touches.size() < 2:
 			if event.position.distance_to(press_at) > DRAG: dragged = true
 			if dragged: panel.pan_by(self, event.relative)
@@ -73,7 +88,10 @@ class MapCanvas extends Control:
 				accept_event()
 				return
 		if event.is_action_pressed("ui_accept"):
-			panel._focus_side()
+			panel._accept()
+			accept_event()
+		if event.is_action_pressed("ui_cancel") and panel.system_view >= 0:
+			panel.close_system()
 			accept_event()
 		# Pad triggers, or + and -, zoom the chart.
 		if event is InputEventJoypadMotion and event.axis in [JOY_AXIS_TRIGGER_LEFT, JOY_AXIS_TRIGGER_RIGHT]:
@@ -97,7 +115,7 @@ func _ready() -> void:
 	app = station.app if flight == null else flight.app
 	game = station.game if flight == null else flight.game
 	add_theme_constant_override("separation", 10)
-	var frame := UI.Frame.new(app.library.text(72))
+	frame = UI.Frame.new(app.library.text(72))
 	frame.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	add_child(frame)
 	canvas = MapCanvas.new()
@@ -222,10 +240,25 @@ func _gui_zoom_step(factor: float) -> void:
 	zoom_at(canvas, _map_rect(canvas).get_center(), factor)
 
 func _draw_map(c: Control) -> void:
+	if system_view >= 0:
+		_draw_system(c)
+		return
 	var cat = app.catalogue
 	var warning := wormhole_address()
 	var story := story_address()
-	c.draw_rect(Rect2(Vector2.ZERO, c.size), Color(0, 0, 0, 0.55))
+	c.draw_rect(Rect2(Vector2.ZERO, c.size), Color.BLACK)
+	# The original's chart lies over its fog picture, tiled and following the pan.
+	var fog: Texture2D = app.library.texture("fog")
+	if fog != null:
+		var step := fog.get_size() * 2.0
+		var from := Vector2(fposmod(pan.x, step.x), fposmod(pan.y, step.y)) - step
+		var y := from.y
+		while y < c.size.y:
+			var x := from.x
+			while x < c.size.x:
+				c.draw_texture_rect(fog, Rect2(Vector2(x, y), step), false)
+				x += step.x
+			y += step.y
 	var here: int = game.session.system_index
 	for i in cat.system_count():
 		if not _known(i): continue
@@ -294,6 +327,9 @@ func route(from: int, to: int) -> Array:
 	return path
 
 func _pick(c: Control, at: Vector2) -> void:
+	if system_view >= 0:
+		_pick_planet(c, at)
+		return
 	var best := -1
 	var best_d := 24.0
 	for i in app.catalogue.system_count():
@@ -307,6 +343,9 @@ func _pick(c: Control, at: Vector2) -> void:
 
 ## Moves the selection to the nearest known system roughly in `dir`.
 func _step_selection(c: Control, dir: Vector2) -> void:
+	if system_view >= 0:
+		_step_planet(c, dir)
+		return
 	var from := _to_screen(c, app.catalogue.system(selected_system))
 	var best := -1
 	var best_score := INF
@@ -343,6 +382,17 @@ func _fill_side() -> void:
 	side.add_child(UI.label("%s: %s" % [app.library.text(220), app.library.text(225 + int(sys.safety))], 14, UI.TEXT_DIM))
 	if selected_system != game.session.system_index:
 		side.add_child(UI.label("%.0f km" % cat.travel_distance(game.session.system_index, selected_system), 14, UI.TEXT_DIM))
+	# The original's softkeys: Zoom into the chosen system, Back out of it.
+	if system_view < 0:
+		side.add_child(UI.button(app.library.text(221), func(): open_system(selected_system)))
+	else:
+		side.add_child(UI.button(app.library.text(65), close_system))
+		# The original's Key: what the markers after a station's name mean.
+		for key in [["menu_map_visited", 224], ["menu_map_mainmission", 278], ["menu_map_sidemission", 279], ["menu_map_jumpgate", 271]]:
+			var line := HBoxContainer.new()
+			line.add_child(_marker(app.library.texture(key[0]), 16))
+			line.add_child(UI.label(app.library.text(key[1]), 13, UI.TEXT_DIM))
+			side.add_child(line)
 	var reachable := _reachable(selected_system)
 	var warning := wormhole_address()
 	var story := story_address()
@@ -428,3 +478,166 @@ func _confirmed(destination: Dictionary) -> void:
 		if sid == game.session.station_id or not _known(system) or not _reachable(system): return
 		if bool(game.session.ship_stats().jump_drive): destination = {"station": sid, "drive": true}
 	station.depart(destination)
+
+## Enter, the pad's A or a double click: on the chart this opens the chosen
+## system; in a system it asks to fly to the chosen station.
+func _accept() -> void:
+	if system_view < 0:
+		if _known(selected_system): open_system(selected_system)
+		return
+	var stations: Array = app.catalogue.system(system_view).get("stations", [])
+	if planet >= 0 and planet < stations.size(): _choose(int(stations[planet]))
+
+func open_system(i: int) -> void:
+	system_view = i
+	selected_system = i
+	var stations: Array = app.catalogue.system(i).get("stations", [])
+	planet = maxi(stations.find(float(game.session.station_id)), stations.find(game.session.station_id))
+	planet = maxi(planet, 0)
+	frame.title = "%s: %s %s" % [app.library.text(72), app.catalogue.system(i).name, app.library.text(41)]
+	frame.queue_redraw()
+	canvas.queue_redraw()
+	_fill_side()
+	if not stations.is_empty(): _show_station(int(stations[planet]))
+
+func close_system() -> void:
+	system_view = -1
+	frame.title = app.library.text(72)
+	frame.queue_redraw()
+	canvas.queue_redraw()
+	_fill_side()
+
+## Where the original puts a system's planets: each station's planet on its
+## own orbit, the orbits growing outwards and the planets spread over ten
+## places around the sun, the same for every visit.
+func _orbit_layout(i: int) -> Array:
+	if _orbits.has(i): return _orbits[i]
+	var out: Array = []
+	var r := JavaRandom.new(i * 1000)
+	var taken := {}
+	var radius := 0
+	var stations: Array = app.catalogue.system(i).get("stations", [])
+	for n in stations.size():
+		var slot := -1
+		while slot < 0 and taken.size() < 10:
+			var k := r.next_int(10)
+			if not taken.has(k): taken[k] = true; slot = k
+		radius = (512 if n == 0 else radius) + 128 + r.next_int(376)
+		out.append({"station": int(stations[n]), "angle": TAU * float(maxi(slot, 0)) / 10.0, "radius": radius})
+	_orbits[i] = out
+	return out
+
+## Screen scale and centre of the system view.
+func _system_frame(c: Control) -> Array:
+	var layout := _orbit_layout(system_view)
+	var reach := 1000.0
+	for o in layout: reach = maxf(reach, float(o.radius) + 300.0)
+	var scale := minf(c.size.x * 0.46, c.size.y * 0.46 / TILT) / reach
+	return [c.size / 2.0, scale]
+
+## How flat the orbits look: the original views its system from above at a slant.
+const TILT := 0.45
+
+func _planet_point(c: Control, o: Dictionary) -> Vector2:
+	var f := _system_frame(c)
+	return (f[0] as Vector2) + Vector2(sin(float(o.angle)), cos(float(o.angle)) * TILT) * float(o.radius) * float(f[1])
+
+func _draw_system(c: Control) -> void:
+	var cat = app.catalogue
+	var lib = app.library
+	var sys: Dictionary = cat.system(system_view)
+	var tint: Array = sys.get("color", [])
+	c.draw_rect(Rect2(Vector2.ZERO, c.size), Color8(int(tint[0]), int(tint[1]), int(tint[2])) if tint.size() >= 3 else Color.BLACK)
+	var f := _system_frame(c)
+	var centre: Vector2 = f[0]
+	var scale: float = f[1]
+	# The sun: the original paints its quarter picture four times, mirrored.
+	var sun: Texture2D = lib.texture("sun_%d" % int(sys.get("star", 0)))
+	if sun != null:
+		var q := sun.get_size() * 2.0
+		for m in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]:
+			c.draw_set_transform(centre, 0.0, m)
+			c.draw_texture_rect(sun, Rect2(-q, q), false)
+		c.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	var layout := _orbit_layout(system_view)
+	for o in layout:
+		var r := float(o.radius) * scale
+		var dots := int(clampf(r / 5.0, 24, 160))
+		for k in dots:
+			var a := TAU * k / dots
+			c.draw_circle(centre + Vector2(sin(a), cos(a) * TILT) * r, 1.2, Color(0.75, 0.82, 0.9, 0.55))
+	var font := c.get_theme_default_font()
+	var story := story_address()
+	var warning := wormhole_address()
+	var job_station := int(game.session.job.get("station", -2)) if not game.session.job.is_empty() else -2
+	# Back to front, so nearer planets cover those behind.
+	var order := range(layout.size())
+	order.sort_custom(func(a, b): return cos(float(layout[a].angle)) < cos(float(layout[b].angle)))
+	for n in order:
+		var o: Dictionary = layout[n]
+		var at := _planet_point(c, o)
+		var sid := int(o.station)
+		var st: Dictionary = cat.station(sid)
+		var picture := int(st.get("planet", 0))
+		var tex: Texture2D = lib.texture("planet_%d" % picture)
+		var d := float(PLANET_SIZES[picture % PLANET_SIZES.size()]) / 320.0 * clampf(c.size.y * 0.09, 22.0, 64.0)
+		if tex != null: c.draw_texture_rect(tex, Rect2(at - Vector2(d, d) / 2.0, Vector2(d, d)), false)
+		else: c.draw_circle(at, d / 2.0, UI.TEXT_DIM)
+		if sid == game.session.station_id:
+			# Your ship's marker over the station you are at.
+			var tip := at + Vector2(0, -d / 2.0 - 4)
+			c.draw_colored_polygon(PackedVector2Array([tip, tip + Vector2(-7, -12), tip + Vector2(7, -12)]), UI.TEXT_GOOD)
+		var chosen: bool = n == planet
+		var visited: bool = game.session.visited_stations.has(str(sid)) or game.session.visited_stations.has(sid)
+		var col: Color = station.ORANGE if chosen and station != null else (Color(1.0, 0.6, 0.18) if chosen else (UI.TEXT if visited else UI.TEXT_DIM))
+		var x := at.x + d / 2.0 + 6
+		var y := at.y - 2
+		var name := str(st.get("name", "?"))
+		c.draw_string_outline(font, Vector2(x, y), name, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, 4, Color.BLACK)
+		c.draw_string(font, Vector2(x, y), name, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, col)
+		# The original's markers after the name: visited, story, job, gate.
+		var icons: Array = []
+		if visited: icons.append("menu_map_visited")
+		if int(story.get("station", -1)) == sid or int(warning.get("station", -1)) == sid: icons.append("menu_map_mainmission")
+		if job_station == sid: icons.append("menu_map_sidemission")
+		if int(sys.get("jumpgate_station", -1)) == sid: icons.append("menu_map_jumpgate")
+		var ix := x + font.get_string_size(name, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x + 6
+		for icon in icons:
+			var t: Texture2D = lib.texture(icon)
+			if t == null: continue
+			var sz := t.get_size() * 1.5
+			c.draw_texture_rect(t, Rect2(Vector2(ix, y - sz.y + 2), sz), false)
+			ix += sz.x + 3
+		if chosen:
+			var tech := "%s: %d" % [lib.text(37), int(st.get("tech", 0))]
+			c.draw_string_outline(font, Vector2(x, y + 18), tech, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, 4, Color.BLACK)
+			c.draw_string(font, Vector2(x, y + 18), tech, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, UI.TEXT if visited else UI.TEXT_DIM)
+
+func _pick_planet(c: Control, at: Vector2) -> void:
+	var layout := _orbit_layout(system_view)
+	var best := -1
+	var best_d := 40.0
+	for n in layout.size():
+		var d := at.distance_to(_planet_point(c, layout[n]))
+		if d < best_d: best_d = d; best = n
+	if best >= 0: _set_planet(best)
+
+func _step_planet(c: Control, dir: Vector2) -> void:
+	var layout := _orbit_layout(system_view)
+	if layout.is_empty(): return
+	var from := _planet_point(c, layout[planet])
+	var best := -1
+	var best_score := INF
+	for n in layout.size():
+		if n == planet: continue
+		var d := _planet_point(c, layout[n]) - from
+		if d.length() < 1.0 or d.normalized().dot(dir) < 0.3: continue
+		var score := d.length() * (2.0 - d.normalized().dot(dir))
+		if score < best_score: best_score = score; best = n
+	if best >= 0: _set_planet(best)
+
+func _set_planet(n: int) -> void:
+	planet = n
+	canvas.queue_redraw()
+	var layout := _orbit_layout(system_view)
+	_show_station(int(layout[n].station))

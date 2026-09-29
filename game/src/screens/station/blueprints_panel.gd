@@ -1,4 +1,4 @@
-extends HBoxContainer
+extends BoxContainer
 ## Owned recipes, deposited materials and products waiting at their origin.
 ## Buttons quote a real cargo contribution; confirmations never pre-spend it.
 const UI := preload("res://src/presentation/ui.gd")

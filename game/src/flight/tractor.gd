@@ -179,7 +179,6 @@ func _crate_step(space, gear: Dictionary, ms: int) -> void:
 		crate_pulling = true
 		crate_start = crate.pos.distance_to(space.player.pos)
 		crate_remaining = crate_start
-		space.event.emit("sound", {"name": "fx_message_03"})
 
 func authorizes(space, body: Body) -> bool:
 	return _settling and source == body and _live_body(space, body) and body.cargo == _payload \

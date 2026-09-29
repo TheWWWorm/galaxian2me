@@ -32,9 +32,21 @@ var music_name := ""
 var sfx_players: Array[AudioStreamPlayer] = []
 var last_save_error := ""
 
+## The interface theme. A theme set on the root window stops at this Node and
+## at the CanvasLayer the screens live on, so each screen, dialog and layer
+## is given it directly.
+var ui_theme: Theme
+
+func set_ui_theme(t: Theme) -> void:
+	ui_theme = t
+	get_tree().root.theme = t
+	for c in ui_layer.get_children():
+		if c is Control: c.theme = t
+
 func _ready() -> void:
-	get_tree().root.theme = UI.make_theme()
+	set_ui_theme(UI.make_theme())
 	get_viewport().size_changed.connect(inset_screen)
+	get_window().size_changed.connect(func(): Prefs.fit_orientation(get_window()))
 	add_child(world_root)
 	ui_layer.layer = 10
 	add_child(ui_layer)
@@ -45,7 +57,7 @@ func _ready() -> void:
 		add_child(p)
 		sfx_players.append(p)
 	settings.load("user://settings.cfg")
-	get_tree().root.theme = UI.make_theme(Prefs.text_size(self))
+	set_ui_theme(UI.make_theme(Prefs.text_size(self)))
 	get_window().files_dropped.connect(_on_files_dropped)
 	_apply_display_settings()
 	# The flight actions and the player's rebinds exist from the start, so
@@ -149,6 +161,8 @@ func _apply_audio() -> void:
 func activate(content_id: String) -> bool:
 	var lib := Library.new()
 	lib.smooth_textures = bool(settings.get_value("display", "smooth_textures", false))
+	# Before stations had their own choice, one setting covered both.
+	lib.smooth_stations = bool(settings.get_value("display", "smooth_station_textures", lib.smooth_textures))
 	if not lib.open(content_id, str(settings.get_value("content", "language", ""))): return false
 	library = lib
 	catalogue = Catalogue.new(lib)
@@ -181,6 +195,7 @@ func _swap(next: Node) -> void:
 	if screen != null:
 		screen.queue_free()
 	screen = next
+	if next is Control: next.theme = ui_theme
 	ui_layer.add_child(next)
 	inset_screen()
 	if bool(settings.get_value("interface", "transitions", true)) and is_inside_tree():
@@ -347,6 +362,7 @@ func pick_save_file(saving: bool, done: Callable) -> void:
 		dialog.queue_free()
 		done.call(path))
 	dialog.canceled.connect(dialog.queue_free)
+	dialog.theme = ui_theme
 	add_child(dialog)
 	dialog.popup_centered_ratio(0.7)
 

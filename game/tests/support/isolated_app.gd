@@ -11,7 +11,7 @@ func _ready() -> void:
 	# Checks never read a player's real replacement art.
 	preload("res://src/content/mods.gd").only_root = "res://tests/no-mods"
 	benchmark_allowed = false
-	get_tree().root.theme = UI.make_theme()
+	set_ui_theme(UI.make_theme())
 	add_child(world_root)
 	ui_layer.layer = 10
 	add_child(ui_layer)
@@ -26,6 +26,10 @@ func _ready() -> void:
 	var Controls := preload("res://src/flight/controls.gd")
 	Controls.ensure_actions()
 	Prefs.apply_bindings(self, Controls.ACTIONS)
+	# An upright window lays out upright, as in the game.
+	get_tree().root.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_EXPAND
+	Prefs.fit_orientation(get_window())
+	get_window().size_changed.connect(func(): Prefs.fit_orientation(get_window()))
 	for content_id in Library.installed():
 		if activate(str(content_id)):
 			show_title()

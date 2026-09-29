@@ -1,4 +1,4 @@
-extends HBoxContainer
+extends BoxContainer
 ## Status: pilot record, standing with the factions and the ship's figures.
 
 const UI := preload("res://src/presentation/ui.gd")

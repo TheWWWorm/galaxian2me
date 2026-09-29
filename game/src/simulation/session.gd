@@ -149,6 +149,21 @@ func add_stat(key: String, amount := 1) -> void:
 # ------------------------------------------------------------------ markets
 
 ## Shelf of a station when it is still one of the last three visited.
+## The original's price record: the lowest and highest price seen for each
+## item and in which system, kept each time a hangar opens.
+func record_price(id: int, price: int, system: int) -> void:
+	if price <= 0: return
+	var all: Dictionary = flags.get("prices", {})
+	var rec: Array = all.get(str(id), [0, 0, 0, 0])
+	if int(rec[0]) == 0 or price < int(rec[0]): rec[0] = price; rec[1] = system
+	if int(rec[2]) == 0 or price > int(rec[2]): rec[2] = price; rec[3] = system
+	all[str(id)] = rec
+	flags["prices"] = all
+
+## [lowest, its system, highest, its system], or [] when never seen.
+func price_record(id: int) -> Array:
+	return (flags.get("prices", {}) as Dictionary).get(str(id), [])
+
 func market_for(id: int) -> Dictionary:
 	for m in markets:
 		if int(m.station) == id: return m
@@ -255,6 +270,13 @@ func _validate_save(d: Dictionary) -> String:
 		if not saved_flags.recent_systems is Array or saved_flags.recent_systems.size() > 6: return invalid
 		for sys in saved_flags.recent_systems:
 			if not _whole(sys, 0, (cat.system_count() - 1) if cat != null else 1000): return invalid
+	if saved_flags.has("prices"):
+		if not saved_flags.prices is Dictionary: return invalid
+		for key in saved_flags.prices:
+			var rec = saved_flags.prices[key]
+			if not _numeric_key(key) or not rec is Array or rec.size() != 4: return invalid
+			for v in rec:
+				if not _whole(v): return invalid
 	if saved_flags.has("unsaleable_cargo"):
 		if not saved_flags.unsaleable_cargo is Dictionary: return invalid
 		for key in saved_flags.unsaleable_cargo:

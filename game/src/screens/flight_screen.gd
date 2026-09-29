@@ -71,7 +71,13 @@ func _ready() -> void:
 	var story_here: bool = not mission.is_empty() and int(mission.get("station", -2)) == game.session.location_id()
 	var job_scene: bool = space.story != null and not space.story.job.is_empty()
 	var lines: Array = game.campaign.take_briefing() if story_here and not job_scene else []
-	if not lines.is_empty(): _conversation(lines)
+	if not lines.is_empty():
+		# The opening's briefing comes at the original's first five-second
+		# check, over the scene's silent start, not before it.
+		if int(game.session.story_step) == 0:
+			get_tree().create_timer(5.0).timeout.connect(func():
+				if is_inside_tree() and app.screen == self and not defeated: _conversation(lines, Callable(), true))
+		else: _conversation(lines, Callable(), true)
 	if bool(game.destination.get("drive", false)): _start_programmed_drive.call_deferred()
 
 func _start_programmed_drive() -> void:
@@ -79,9 +85,10 @@ func _start_programmed_drive() -> void:
 	if not space.jump_to(int(game.destination.get("station", -2))): hud.message(space.drive_error())
 
 ## A conversation box over the paused flight.
-func _conversation(lines: Array, after := Callable()) -> void:
+func _conversation(lines: Array, after := Callable(), chime := false) -> void:
 	var d := preload("res://src/screens/dialogue_panel.gd").new()
 	d.app = app
+	d.chime = chime
 	d.lines = lines
 	conversation = d
 	_sync_pause()
@@ -236,22 +243,22 @@ func _physics_process(delta: float) -> void:
 			var before: int = game.session.story_step
 			if before == 41 and game.session.in_void:
 				var result_lines: Array = game.campaign.dialogue(before, 1)
-				if not result_lines.is_empty(): _conversation(result_lines, _finish_final_delivery)
+				if not result_lines.is_empty(): _conversation(result_lines, _finish_final_delivery, true)
 				else: _finish_final_delivery()
 				return
 			if before == 42 and not game.session.in_void:
 				var result_lines: Array = game.campaign.dialogue(before, 1)
-				if not result_lines.is_empty(): _conversation(result_lines, _finish_final_return)
+				if not result_lines.is_empty(): _conversation(result_lines, _finish_final_return, true)
 				else: _finish_final_return()
 				return
 			if before == 29 and game.session.in_void:
 				var result_lines: Array = game.campaign.dialogue(before, 1)
-				if not result_lines.is_empty(): _conversation(result_lines, _finish_void_probe)
+				if not result_lines.is_empty(): _conversation(result_lines, _finish_void_probe, true)
 				else: _finish_void_probe()
 				return
 			if before == 25 and game.session.in_void:
 				var result_lines: Array = game.campaign.dialogue(before, 1)
-				if not result_lines.is_empty(): _conversation(result_lines, _finish_void_arrival)
+				if not result_lines.is_empty(): _conversation(result_lines, _finish_void_arrival, true)
 				else: _finish_void_arrival()
 				return
 			if before in [14, 21]:
@@ -260,13 +267,13 @@ func _physics_process(delta: float) -> void:
 				# occur only AFTER the player closes the success dialogue.
 				var result_lines: Array = game.campaign.dialogue(before, 2)
 				var transfer := _finish_story_station_transfer.bind(before)
-				if not result_lines.is_empty(): _conversation(result_lines, transfer)
+				if not result_lines.is_empty(): _conversation(result_lines, transfer, true)
 				else: transfer.call()
 				return
 			var lines: Array = game.campaign.conclude()
 			game.pending_dialogue = []
 			if space.story != null: space.story.step_changed(before + 1)
-			if not lines.is_empty(): _conversation(lines)
+			if not lines.is_empty(): _conversation(lines, Callable(), true)
 
 ## Delivery is not yet escape. Keep the result at step41 while it is read,
 ## then arm the source deadline in this same world with its actual damage.
@@ -329,6 +336,20 @@ func _process(delta: float) -> void:
 			if absf(z) > 0.1: view.photo_distance = clampf(view.photo_distance * (1.0 - z * delta), 900.0, 40000.0)
 	view.sync(delta)
 	_update_touch_context()
+	_sync_mouse_capture()
+
+## Flying with the mouse keeps the pointer captured the whole flight, scenes
+## included (Deep's flight); a menu, pause, conversation or lost focus hands
+## it back.
+func _sync_mouse_capture() -> void:
+	var want: bool = controls.mouse_steer and not paused and DisplayServer.get_name() != "headless" \
+		and DisplayServer.window_is_focused() and bool(app.setting("controls", "capture_mouse", true))
+	var mode := Input.MOUSE_MODE_CAPTURED if want else Input.MOUSE_MODE_VISIBLE
+	if Input.mouse_mode != mode: Input.mouse_mode = mode
+	var now := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
+	if now != controls.captured:
+		controls.captured = now
+		controls.mouse_turn = Vector2.ZERO
 
 ## Preserve the completed scan only after its actual result is acknowledged.
 ## It remains a Void flight; this transaction never docks or repairs the ship.
@@ -497,7 +518,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			close_navigation()
 			get_viewport().set_input_as_handled()
 		return
-	if event.is_action_pressed("ui_accept") and not paused and space.story != null:
+	var click: bool = event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT
+	var cinematic: bool = space.story != null and space.story.controls_locked
+	if (event.is_action_pressed("ui_accept") or click and cinematic) and not paused and space.story != null:
 		_next_radio()
 		get_viewport().set_input_as_handled()
 	if event.is_action_pressed("ui_cancel") or event.is_action_pressed("pause"):
@@ -527,6 +550,8 @@ func _navigation_box(title: String) -> VBoxContainer:
 
 func open_actions() -> void:
 	if conversation != null or defeated or menu_paused or space.navigation_locked(): return
+	# The original clicks as its action menu and weapon submenu open.
+	app.play_sound("fx_menu_04")
 	var box := _navigation_box(app.library.text(136))
 	var tip := Tips.station_tip(app, "action_menu")
 	if not tip.is_empty(): box.add_child(UI.paragraph(str(tip.text), 13, UI.TEXT_DIM))
@@ -585,6 +610,7 @@ func open_autopilot() -> void:
 ## Chooses which launcher the secondary button fires.
 func open_secondaries() -> void:
 	if app.screen != self or conversation != null or defeated or menu_paused or space.navigation_locked(): return
+	app.play_sound("fx_menu_04")
 	var box := _navigation_box(app.library.text(124))
 	var current := space.current_secondary()
 	var first: Button = null
@@ -689,6 +715,7 @@ func close_navigation() -> void:
 	if controls != null: _sync_pause()
 
 func _exit_tree() -> void:
+	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	if controls != null: controls.reset()
 	if view != null: view.queue_free()
 	if space != null: space.dispose()

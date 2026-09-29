@@ -19,6 +19,8 @@ const Common := preload("res://src/screens/station/common.gd")
 const Portrait := preload("res://src/presentation/portrait.gd")
 
 ## Section labels (strings) and the story step each opens at.
+## The original's highlight for the chosen entry of a list.
+const ORANGE := Color8(0xff, 0x9a, 0x2e)
 const SECTIONS := [[62, 5], [218, 13], [72, 9], [33, 13], [64, 0], [66, 0]]
 
 var app
@@ -28,10 +30,13 @@ var view: HangarView
 var env := WorldEnvironment.new()
 var header: Label
 var credits_label: Label
+var tech_label: Label
+var footer: PanelContainer
 var menu: VBoxContainer
 var rail: Control
 var home: VBoxContainer
 var launch_button: Button
+var back_button: Button
 var content: Control
 var current_panel: Control
 var toast: Label
@@ -72,10 +77,18 @@ func _build_layout() -> void:
 	top.add_child(logo)
 	var names := VBoxContainer.new()
 	top.add_child(names)
+	# The original's corner: the station's name over its tech level.
 	header = UI.label("", 22)
 	names.add_child(header)
-	credits_label = UI.label("", 16, UI.TEXT_GOOD)
-	names.add_child(credits_label)
+	tech_label = UI.label("", 16)
+	names.add_child(tech_label)
+	# Held upright the rail gives way to the page; this leads back to the tiles.
+	var gap := Control.new()
+	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top.add_child(gap)
+	back_button = UI.button(app.library.text(74), close_panel)
+	back_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	top.add_child(back_button)
 	var left := UI.Frame.new(app.library.text(40))
 	rail = left
 	left.set_anchors_preset(Control.PRESET_LEFT_WIDE)
@@ -90,13 +103,34 @@ func _build_layout() -> void:
 	content.offset_left = 256; content.offset_top = 96; content.offset_right = -12; content.offset_bottom = -12
 	content.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(content)
-	# The docked home: the six sections as tiles along the foot of the view,
-	# the hangar and ship left in sight above them.
+	# The docked home, as the original lays it out: the section list in a
+	# window at the bottom left over the hangar view, the credits at the bottom
+	# right and Depart on the footer bar.
+	footer = PanelContainer.new()
+	footer.add_theme_stylebox_override("panel", UI._box(UI.DEEP, UI.BORDER))
+	footer.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
+	footer.offset_top = -46
+	add_child(footer)
+	var bar := HBoxContainer.new()
+	footer.add_child(bar)
+	var gap2 := Control.new()
+	gap2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bar.add_child(gap2)
+	launch_button = UI.button(app.library.text(239), depart.bind({}))
+	launch_button.flat = true
+	launch_button.add_theme_font_size_override("font_size", 20)
+	bar.add_child(launch_button)
+	credits_label = UI.label("", 18)
+	credits_label.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+	credits_label.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	credits_label.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	credits_label.offset_right = -12; credits_label.offset_bottom = -52
+	credits_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	add_child(credits_label)
 	home = VBoxContainer.new()
-	home.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-	home.offset_left = 12; home.offset_right = -12; home.offset_bottom = -54
+	home.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
+	home.offset_left = 12; home.offset_bottom = -54
 	home.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	home.alignment = BoxContainer.ALIGNMENT_END
 	add_child(home)
 	toast = UI.label("", 16, UI.TEXT_WARN)
 	toast.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
@@ -104,6 +138,32 @@ func _build_layout() -> void:
 	toast.offset_top = -44; toast.offset_left = -300; toast.offset_right = 300
 	add_child(toast)
 	_build_menu()
+	resized.connect(_fit_orientation)
+
+## Held upright (Deep's portrait mode) the section rail is dropped for the
+## home tiles and a Back button, and each page stacks its columns.
+func _fit_orientation() -> void:
+	var tall := size.y > size.x
+	# A page that fills the screen (the lounge's bar) brings its own Back.
+	var full := current_panel != null and current_panel.has_meta("full_view")
+	rail.visible = current_panel != null and not tall and not full
+	back_button.visible = current_panel != null and tall and not full
+	content.offset_left = 12 if tall or full else 256
+	if current_panel == null: return
+	var boxes: Array = [current_panel]
+	if current_panel is TabContainer: boxes = current_panel.get_children()
+	for box in boxes:
+		if box is BoxContainer and not (box is HBoxContainer or box is VBoxContainer): _stack(box, tall)
+
+static func _stack(box: BoxContainer, tall: bool) -> void:
+	if box.vertical == tall: return
+	box.vertical = tall
+	for c in box.get_children():
+		if not c is Control: continue
+		if not c.has_meta("wide_layout"): c.set_meta("wide_layout", [c.size_flags_vertical, c.custom_minimum_size.x])
+		var wide: Array = c.get_meta("wide_layout")
+		c.size_flags_vertical = Control.SIZE_EXPAND_FILL if tall else int(wide[0])
+		c.custom_minimum_size.x = 0.0 if tall else float(wide[1])
 
 func _build_menu() -> void:
 	for c in menu.get_children(): c.queue_free()
@@ -119,102 +179,63 @@ func _build_menu() -> void:
 	# Departure cannot live exclusively in the Map section: that section
 	# unlocks after the opening mining flights have already been completed.
 	menu.add_child(HSeparator.new())
-	launch_button = UI.button(app.library.text(239), depart.bind({}))
-	menu.add_child(launch_button)
+	menu.add_child(UI.button(app.library.text(239), depart.bind({})))
 	_build_home()
-	rail.visible = current_panel != null
 	home.visible = current_panel == null
+	footer.visible = current_panel == null
+	credits_label.visible = current_panel == null
+	_fit_orientation()
 	if current_panel != null: (menu.get_child(0) as Control).grab_focus.call_deferred()
 
-## The home tiles: each section with its picture and what is waiting there.
+## The home list: the original's six sections, locked ones marked.
 func _build_home() -> void:
 	for c in home.get_children(): c.queue_free()
-	var flow := HFlowContainer.new()
-	flow.alignment = FlowContainer.ALIGNMENT_CENTER
-	flow.add_theme_constant_override("h_separation", 10)
-	flow.add_theme_constant_override("v_separation", 10)
-	home.add_child(flow)
+	var frame := UI.Frame.new("")
+	frame.custom_minimum_size.x = 260
+	home.add_child(frame)
+	var list := VBoxContainer.new()
+	list.add_theme_constant_override("separation", 0)
+	frame.add_child(list)
 	var step: int = game.session.story_step
 	var first: Control = null
 	for i in SECTIONS.size():
 		var open: bool = step >= int(SECTIONS[i][1])
-		var tile := _tile(app.library.text(SECTIONS[i][0]), _tile_picture(i) if open else UI.picture(app.library.texture("lock"), 3.0),
-			_tile_summary(i) if open else "—", _open_section.bind(i), open)
-		flow.add_child(tile)
-		if first == null and open: first = tile
-	var arrow := UI.picture(app.library.texture("arrow"), 3.0)
-	arrow.flip_h = true
-	var go := _tile(app.library.text(239), arrow, game.station().get("name", ""), depart.bind({}), true)
-	go.add_theme_stylebox_override("normal", UI._box(UI.GREEN_DARK, UI.GREEN))
-	go.add_theme_stylebox_override("hover", UI._box(UI.GREEN_DARK.lightened(0.15), UI.TEXT_GOOD))
-	flow.add_child(go)
+		var b := _menu_item(app.library.text(SECTIONS[i][0]), open, _open_section.bind(i))
+		list.add_child(b)
+		if first == null: first = b
 	if first != null: first.grab_focus.call_deferred()
 
-func _tile(title: String, picture: Control, summary: String, action: Callable, open: bool) -> Button:
+## A plain list entry, orange when chosen, as the original's menus draw them.
+func _menu_item(text: String, open: bool, action: Callable) -> Button:
 	var b := Button.new()
+	b.text = text
+	b.flat = true
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	b.focus_mode = Control.FOCUS_ALL
-	b.custom_minimum_size = Vector2(158, 132)
+	b.add_theme_font_size_override("font_size", 20)
+	b.add_theme_color_override("font_hover_color", ORANGE)
+	b.add_theme_color_override("font_focus_color", ORANGE)
+	b.add_theme_color_override("font_pressed_color", ORANGE)
+	b.add_theme_color_override("font_hover_pressed_color", ORANGE)
+	var none := StyleBoxEmpty.new()
+	for state in ["normal", "hover", "pressed", "focus", "hover_pressed"]: b.add_theme_stylebox_override(state, none)
+	# Every entry keeps the lock's width so the names line up.
+	var lock: Texture2D = app.library.texture("lock")
+	if open:
+		var room: Vector2i = Vector2i(lock.get_size()) if lock != null else Vector2i(8, 8)
+		var blank := Image.create_empty(room.x, room.y, false, Image.FORMAT_RGBA8)
+		b.icon = ImageTexture.create_from_image(blank)
+	else:
+		b.icon = lock
+	b.expand_icon = false
 	b.pressed.connect(action)
-	if not open: b.modulate = Color(0.65, 0.65, 0.65)
-	var v := VBoxContainer.new()
-	v.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	v.offset_left = 8; v.offset_right = -8; v.offset_top = 8; v.offset_bottom = -8
-	v.alignment = BoxContainer.ALIGNMENT_CENTER
-	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	b.add_child(v)
-	var frame := CenterContainer.new()
-	frame.custom_minimum_size.y = 58
-	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	picture.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	frame.add_child(picture)
-	v.add_child(frame)
-	var t := UI.label(title, 16)
-	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	v.add_child(t)
-	var sub := UI.label(summary, 12, UI.TEXT_DIM)
-	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	sub.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	sub.custom_minimum_size.x = 140
-	v.add_child(sub)
 	return b
-
-func _tile_picture(index: int) -> Control:
-	var lib = app.library
-	match index:
-		0: return Common.ship_icon(lib, int(game.session.ship.index))
-		1:
-			var people: Array = game.lounge()
-			if not people.is_empty(): return Portrait.make(lib, -1, people[0].get("face", []), 1.0)
-		2: return UI.picture(lib.texture("planet_%d" % int(game.station().get("planet", 0))), 0.5)
-		3: return UI.picture(lib.texture("menu_map_mainmission"), 3.0)
-		4: return UI.picture(lib.texture("medals"), 3.0, Rect2(31, 0, 31, 15))
-		5: return UI.picture(lib.texture("logos_small"), 3.0, Rect2(15 * int(game.system().faction), 0, 15, 15))
-	return Control.new()
-
-func _tile_summary(index: int) -> String:
-	var lib = app.library
-	match index:
-		0:
-			var parts: Array = [lib.text(79), lib.text(77)]
-			if not game.dealer().is_empty(): parts.append(lib.text(68))
-			return " · ".join(parts)
-		1: return "%d %s" % [game.lounge().size(), "guest" if game.lounge().size() == 1 else "guests"]
-		2: return app.catalogue.system_name(game.session.system_index)
-		3:
-			var m: Dictionary = game.session.story_mission
-			if not m.is_empty() and int(m.get("station", -1)) >= 0:
-				return "→ " + app.catalogue.station_name(int(m.station))
-			var j: Dictionary = game.session.job
-			if not j.is_empty() and int(j.get("station", -1)) >= 0: return "→ " + app.catalogue.station_name(int(j.station))
-			return ""
-		4: return "Medals %d/%d" % [preload("res://src/simulation/medals.gd").held_count(game.session, lib), preload("res://src/simulation/medals.gd").table(lib).size()]
-		5: return "%s · %s" % [lib.text(2), lib.text(3)]
-	return ""
 
 func _refresh() -> void:
 	var st: Dictionary = game.station()
-	header.text = "%s  ·  %s  ·  %s %d" % [st.get("name", "?"), app.catalogue.system_name(game.session.system_index), app.library.text(37), int(st.get("tech", 0))]
-	credits_label.text = "%s: %s" % [app.library.text(80), UI.money(game.session.credits)]
+	header.text = str(st.get("name", "?"))
+	tech_label.text = "%s: %d" % [app.library.text(37), int(st.get("tech", 0))]
+	credits_label.text = UI.money(game.session.credits)
 
 ## Trading and fitting can satisfy a docked goal without another flight.
 ## Defer until the control's callback has finished rebuilding its rows. Merely
@@ -305,8 +326,10 @@ func show_panel(p: Control) -> void:
 	current_panel = p
 	content.add_child(p)
 	p.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	rail.visible = true
 	home.visible = false
+	footer.visible = false
+	credits_label.visible = false
+	_fit_orientation()
 
 func close_panel() -> void:
 	if current_panel != null: current_panel.queue_free()
@@ -353,7 +376,7 @@ func _on_arrival() -> void:
 	if not lines.is_empty():
 		show_dialogue(lines, func():
 			_build_menu()
-			_show_medals())
+			_show_medals(), true)
 	else:
 		_show_medals()
 
@@ -405,12 +428,12 @@ func _show_medals() -> void:
 		_show_medals())
 	ok.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(ok)
-	app.play_sound("fx_message_03")
 	ok.grab_focus.call_deferred()
 
-func show_dialogue(lines: Array, done: Callable) -> void:
+func show_dialogue(lines: Array, done: Callable, chime := false) -> void:
 	var d := DialoguePanel.new()
 	d.app = app
+	d.chime = chime
 	d.lines = lines
 	conversation = d
 	d.finished.connect(func():

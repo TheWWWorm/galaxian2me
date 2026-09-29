@@ -8,8 +8,6 @@ const Backdrop := preload("res://src/presentation/backdrop.gd")
 const CameraPath := preload("res://src/presentation/camera_path.gd")
 const OptionsPanel := preload("res://src/screens/options_panel.gd")
 const HelpPanel := preload("res://src/screens/help_panel.gd")
-const ModsPanel := preload("res://src/screens/mods_panel.gd")
-const CreditsPanel := preload("res://src/screens/credits_panel.gd")
 const Benchmark := preload("res://src/presentation/benchmark.gd")
 
 var app
@@ -67,20 +65,14 @@ func _fill_menu() -> void:
 	for c in menu.get_children(): c.queue_free()
 	menu_frame.visible = true
 	var lib = app.library
+	# The original's menu: Start new game, Load game, Options, Help, Exit
+	# (Resume only over a game in progress; Credits live under Options).
 	if app.game != null:
 		menu.add_child(UI.button(lib.text(18), func(): app.show_station()))
-	else:
-		var latest = _latest_save()
-		if latest != null:
-			menu.add_child(UI.button(lib.text(18), func():
-				var err: String = app.load_game(int(latest))
-				if not err.is_empty(): _message(err)))
 	menu.add_child(UI.button(lib.text(0), _new_game))
 	menu.add_child(UI.button(lib.text(1), _load))
 	menu.add_child(UI.button(lib.text(3), _options))
 	menu.add_child(UI.button(lib.text(4), _help))
-	menu.add_child(UI.button("Mods", _mods))
-	menu.add_child(UI.button(lib.text(21), _credits))
 	if not OS.has_feature("web"):
 		menu.add_child(UI.button(lib.text(5), func(): get_tree().quit()))
 	(menu.get_child(0) as Control).grab_focus.call_deferred()
@@ -177,18 +169,6 @@ func _options() -> void:
 
 func _help() -> void:
 	var p := HelpPanel.new()
-	p.app = app
-	p.closed.connect(_fill_menu)
-	_show_panel(p)
-
-func _credits() -> void:
-	var p := CreditsPanel.new()
-	p.app = app
-	p.closed.connect(_fill_menu)
-	_show_panel(p)
-
-func _mods() -> void:
-	var p := ModsPanel.new()
 	p.app = app
 	p.closed.connect(_fill_menu)
 	_show_panel(p)

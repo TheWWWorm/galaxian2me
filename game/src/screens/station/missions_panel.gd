@@ -1,4 +1,4 @@
-extends HBoxContainer
+extends BoxContainer
 ## Missions: the current story mission and the accepted freelance job.
 
 const UI := preload("res://src/presentation/ui.gd")

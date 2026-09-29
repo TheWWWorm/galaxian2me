@@ -109,10 +109,21 @@ static func apply_display(app) -> void:
 	var aspect: float = ASPECTS[clampi(int(get_value(app, "display", "aspect", 0)), 0, ASPECTS.size() - 1)]
 	if aspect <= 0.0:
 		root.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_EXPAND
-		root.content_scale_size = Vector2i(1280, 800)
+		fit_orientation(root)
 	else:
 		root.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_KEEP
 		root.content_scale_size = Vector2i(int(round(800.0 * aspect)), 800)
+
+## Held upright (a window taller than it is wide), the interface lays out on
+## an upright canvas so text and controls keep their landscape size, as
+## Deep's does; otherwise the usual 1280 x 800.
+static func fit_orientation(root: Window) -> void:
+	if root.content_scale_aspect != Window.CONTENT_SCALE_ASPECT_EXPAND: return
+	var want := Vector2i(800, 1280) if is_portrait(root) else Vector2i(1280, 800)
+	if root.content_scale_size != want: root.content_scale_size = want
+
+static func is_portrait(root: Window) -> bool:
+	return root.size.y > root.size.x
 
 ## Rebuilds the keyboard events of each bindable action from the settings;
 ## gamepad and alternative defaults stay in place.

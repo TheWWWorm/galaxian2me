@@ -17,7 +17,10 @@ var manifest := {}
 var data := {}
 var strings := PackedStringArray()
 var language := ""
+## Filtered (smooth) or pixelated surfaces, chosen apart for station modules
+## and for everything else (ships, rocks, crates), as Deep's options do.
 var smooth_textures := false
+var smooth_stations := false
 var flip_winding := false
 
 var _models := {}
@@ -286,15 +289,16 @@ func mesh(name: String, skinned := false, pattern := 0) -> Array:
 	_meshes[key] = result
 	return result
 
-func material(g: Dictionary, skinned := false) -> ShaderMaterial:
+func material(g: Dictionary, skinned := false, station := false) -> ShaderMaterial:
 	var blend: int = g.blend
-	var key := "%d|%s|%s|%s|%s|%s|%s|%s" % [blend, g.double, g.lit, g.specular, g.key, g.texture >= 0, skinned, smooth_textures]
+	var smooth := smooth_stations if station else smooth_textures
+	var key := "%d|%s|%s|%s|%s|%s|%s|%s" % [blend, g.double, g.lit, g.specular, g.key, g.texture >= 0, skinned, smooth]
 	if _materials.has(key): return _materials[key]
 	var mode := "blend_mix"
 	if blend == 4: mode = "blend_add"
 	elif blend == 6: mode = "blend_sub"
 	var cull := "cull_disabled" if g.double else "cull_back"
-	var filter := "filter_linear_mipmap" if smooth_textures else "filter_nearest"
+	var filter := "filter_linear_mipmap" if smooth else "filter_nearest"
 	var skey := mode + cull + filter
 	if not _shaders.has(skey):
 		var sh := Shader.new()
@@ -322,7 +326,7 @@ func material(g: Dictionary, skinned := false) -> ShaderMaterial:
 	return mat
 
 ## A ready-to-place instance of a model by file name (without extension).
-func instance(name: String, skinned := false, pattern := 0) -> MeshInstance3D:
+func instance(name: String, skinned := false, pattern := 0, station := false) -> MeshInstance3D:
 	var built := mesh(name, skinned, pattern)
 	var node := MeshInstance3D.new()
 	node.name = name
@@ -339,7 +343,7 @@ func instance(name: String, skinned := false, pattern := 0) -> MeshInstance3D:
 			return node
 	node.mesh = built[0]
 	for i in built[1].size():
-		node.set_surface_override_material(i, material(built[1][i], skinned))
+		node.set_surface_override_material(i, material(built[1][i], skinned, station))
 	if skinned: node.custom_aabb = built[2].grow(built[2].get_longest_axis_size())
 	return node
 

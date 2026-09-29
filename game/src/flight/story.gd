@@ -39,6 +39,10 @@ var complete := false
 var failed := false
 ## Presentation requests read by the view and HUD.
 var hud_hidden := false
+## Only the crosshair and the ship markers are up: the opening's fight.
+var radar_only := false
+## The ship is held where it is (the original's setFreeze): no flight at all.
+var frozen := false
 var controls_locked := false
 var camera_mode := "chase"
 var camera_target: Body = null
@@ -51,6 +55,8 @@ var probe_position := Vector3.ZERO
 var probe_basis := Basis.IDENTITY
 var probe_started_at := -1
 const PROBE_SCAN_MS := 180000
+## The original's quarter turn (Euler Y 1024 of 4096): the ship crosses the view.
+const QUARTER_TURN := Basis(Vector3(0, 0, -1), Vector3(0, 1, 0), Vector3(1, 0, 0))
 const FINAL_ESCAPE_MS := 60000
 var escape_started_at := -1
 
@@ -145,7 +151,8 @@ func _scene_opening() -> void:
 		var p := _ship(8, 10, at)
 		p.hull = 150; p.hull_max = 150
 		p.hostile = true
-		p.visible = i != 2
+		# All three are in sight from the start; only their engines are out.
+		p.exhaust = false
 		p.ai.mode = "hold"
 	cast[2].pos = Vector3(0, 0, -40000)
 	waypoints = [Vector3(0, 0, -30000), Vector3.ZERO]
@@ -158,6 +165,7 @@ func _scene_opening() -> void:
 	space.player.hull_max = 9999999
 	hud_hidden = true
 	controls_locked = true
+	frozen = true
 	camera_mode = "fixed"
 	camera_position = Vector3.ZERO
 	camera_target = null
@@ -173,8 +181,10 @@ func _scene_rescue() -> void:
 	g.ai.waypoint = Vector3(0, 0, -5000)
 	space.player.pos = Vector3.ZERO
 	space.player.basis = space.player.basis.rotated(Vector3.UP, 0.2)
+	space.player.exhaust = false
 	hud_hidden = true
 	controls_locked = true
+	frozen = true
 	camera_mode = "shot"
 	camera_target = space.player
 	camera_offset = Vector3(1500, 600, -3000)
@@ -692,8 +702,6 @@ func step_scene(ms: int) -> void:
 				var rec: Array = records[i]
 				var text: String = lib.text(int(rec[0]))
 				duration = _lines(text) * 2000 + 1500
-				# The original's chime whenever a message box opens.
-				if not text.strip_edges().is_empty(): space.event.emit("sound", {"name": "fx_message_02", "volume": 0.7})
 				break
 	match step:
 		0: _run_opening(ms)
@@ -871,20 +879,22 @@ func _run_opening(ms: int) -> void:
 	match stage:
 		0:
 			controls_locked = true
-			space.player.basis = Basis.IDENTITY.rotated(Vector3.UP, PI)
+			frozen = false
+			space.player.basis = QUARTER_TURN
 			camera_mode = "look"
 			camera_position = Vector3(-1000, -500, 110000)
 			camera_target = space.player
 			stage = 1
 		1:
 			if _done(2):
+				frozen = true
 				_shot(cast[0], Vector3(1000, 700, 1500)); stage = 2
 		2:
 			if _done(3):
 				_shot(cast[1], Vector3(-2300, 300, 200)); stage = 3
 		3:
 			if _done(5):
-				cast[2].visible = true
+				cast[2].ai.mode = "patrol"
 				_shot(cast[2], Vector3(1000, 200, 6000)); stage = 4
 		4:
 			if _done(6):
@@ -892,14 +902,17 @@ func _run_opening(ms: int) -> void:
 		5:
 			if _done(7):
 				hud_hidden = false
-				controls_locked = false
+				radar_only = true
+				frozen = false
 				camera_mode = "chase"
 				stage = 6
 				space.event.emit("music", {"name": "gof2_gaction"})
 		6:
+			# The ship stays on its course until the pirates wake.
 			if _done(8):
+				controls_locked = false
 				for b in cast:
-					b.visible = true
+					b.exhaust = true
 					b.ai.mode = "patrol"
 				stage = 7
 		7:
@@ -908,6 +921,7 @@ func _run_opening(ms: int) -> void:
 				hud_hidden = true
 				controls_locked = true
 				space.player.weapons = []
+				space.player.basis = QUARTER_TURN
 				camera_mode = "look"
 				camera_position = space.player.pos + Vector3(1000, -200, -60000)
 				camera_target = space.player
@@ -915,17 +929,26 @@ func _run_opening(ms: int) -> void:
 		8:
 			if _done(12):
 				flash = 1.0
+				space.player.exhaust = false
+				frozen = true
 				stage = 9
 		9:
-			space.player.basis = space.player.basis.rotated(Vector3(1, 1, 1).normalized(), ms / 1000.0 * 0.8).orthonormalized()
-			if _done(16): stage = 10
+			# Half a unit per millisecond about each axis, as the original tumbles.
+			space.player.basis = space.player.basis.rotated(Vector3(1, 1, 1).normalized(), ms / 1000.0 * 1.33).orthonormalized()
+			if _done(16):
+				frozen = false
+				stage = 10
 		10:
 			camera_position = space.player.pos + Vector3(-1000, -700, -1500)
 			if _done(14):
+				space.player.exhaust = true
+				space.player.basis = Basis.IDENTITY
 				camera_position = space.player.pos + Vector3(1000, 200, 15000)
 				stage = 11
-	if stage >= 9 and stage < 11:
-		space.player.basis = space.player.basis.rotated(Vector3.RIGHT, ms / 2000.0).orthonormalized()
+	# The two waiting pirates drift gently until they wake.
+	if stage >= 1 and stage < 6:
+		for i in mini(2, cast.size()):
+			cast[i].pos.y += sin(clock * TAU / 4096.0) * ms * 0.12
 	if _done(records.size() - 1):
 		complete = true
 		space.event.emit("story_next", {"to": "flight"})
@@ -938,6 +961,8 @@ func _run_rescue(ms: int) -> void:
 		var g: Body = cast[0]
 		if g.pos.z < -1800.0:
 			g.pos.z += ms * 0.5
+		else:
+			g.exhaust = false
 		g.ai.mode = "hold"
 	if _done(2) or (records.size() > 0 and _done(records.size() - 1)):
 		complete = true

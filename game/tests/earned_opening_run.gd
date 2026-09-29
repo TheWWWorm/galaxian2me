@@ -32,6 +32,9 @@ var mined_before_second := -1
 var second_return_cargo := {}
 var player_hits: Array = []
 
+## Autosave, three manual slots, Import save… (not on the web) and Back.
+var LOAD_ROWS := 5 + (0 if OS.has_feature("web") else 1)
+
 func _init() -> void:
 	var args := OS.get_cmdline_user_args()
 	if not args.is_empty(): out = args[0]
@@ -313,7 +316,7 @@ func trade_and_saves() -> void:
 	app.screen._load()
 	await frames(2)
 	var load_box = app.screen.panel_holder.get_child(0).get_child(0)
-	check(load_box.get_child_count() == 5 and load_box.get_child(0).text.begins_with("Autosave"), "title load menu exposes autosave plus three manual slots")
+	check(load_box.get_child_count() == LOAD_ROWS and load_box.get_child(0).text.begins_with("Autosave"), "title load menu exposes autosave plus three manual slots")
 	await shot("load_menu")
 	load_box.get_child(0).pressed.emit()
 	await frames(3)
@@ -324,7 +327,7 @@ func trade_and_saves() -> void:
 	panel = app.screen.current_panel
 	panel._load()
 	await frames(2)
-	check(panel.box.get_child_count() == 5, "station load menu includes the same four checkpoints")
+	check(panel.box.get_child_count() == LOAD_ROWS, "station load menu includes the same four checkpoints")
 	panel.box.get_child(1).pressed.emit()
 	await frames(3)
 	check(snapshot() == traded, "station manual Load restores the earned trade checkpoint")
