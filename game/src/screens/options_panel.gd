@@ -272,7 +272,7 @@ func _interface_page() -> void:
 	_toggle("Launch sequence", "interface", "launch_sequence", true)
 	_note("As in the original, each flight opens with a few seconds watching your ship leave, with the system's details and a tip. A key, click or tap skips it.")
 	_toggle("Radar scope", "interface", "radar_scope", true)
-	_note("A round radar in a corner of the flight display. Not part of the original, which marks ships only on screen and at its edges.")
+	_note("A round radar on the Extended flight display. Not part of the original, which marks ships only on screen and at its edges.")
 	_toggle("Object labels", "interface", "labels", true)
 	_note("Names and distances beside stations, gates and the target.")
 	_toggle("Screen transitions", "interface", "transitions", true)

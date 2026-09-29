@@ -250,8 +250,9 @@ func _draw() -> void:
 			Prefs.key_name("fire"), Prefs.key_name("boost"), Prefs.key_name("autopilot"),
 			Prefs.key_name("next_target"), Prefs.key_name("action_menu")]
 		var room := size.x - 2.0 * (320.0 * k + MARGIN * 2.0)
+		var foot := size.y - MARGIN - 4 * k
 		if room > 200.0:
-			_string(Vector2(size.x / 2.0 - room / 2.0, size.y - MARGIN - 4 * k), keys,
+			_string(Vector2(size.x / 2.0 - room / 2.0, foot), keys,
 				HORIZONTAL_ALIGNMENT_CENTER, room, _px(11), Color(UI.TEXT_DIM, 0.75))
 
 # ------------------------------------------------------------------ drawing kit
@@ -723,7 +724,9 @@ func action_hint() -> String:
 	var t: Body = space.target
 	if t == null or not t.alive or t.is_ship() or space.autopilot or space.mining != null: return ""
 	if not space.locked:
-		return "Hold it in the crosshair to lock on" if t.kind != Body.Kind.STAR else ""
+		# Asteroids drift across the reticle all the time in a field; only
+		# places to fly to get the reminder.
+		return "Hold it in the crosshair to lock on" if t.kind in [Body.Kind.STATION, Body.Kind.GATE, Body.Kind.WORMHOLE] else ""
 	var what: String = {"dock": "fly in and dock", "gate": "fly into the gate",
 		"wormhole": "fly into the wormhole", "mine": "mine"}.get(space.target_action(), "")
 	if what.is_empty(): return ""
