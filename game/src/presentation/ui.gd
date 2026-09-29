@@ -35,14 +35,14 @@ static func money(value: int) -> String:
 			n = 0
 	return ("-" if value < 0 else "") + out + "$"
 
-static func make_theme() -> Theme:
+static func make_theme(text_size := 16) -> Theme:
 	var t := Theme.new()
 	var font := SystemFont.new()
 	font.font_names = PackedStringArray(["DejaVu Sans", "Noto Sans", "Liberation Sans", "Arial", "sans-serif"])
 	font.antialiasing = TextServer.FONT_ANTIALIASING_GRAY
 	font.hinting = TextServer.HINTING_LIGHT
 	t.default_font = font
-	t.default_font_size = 16
+	t.default_font_size = text_size
 	for type in ["Label", "Button", "LineEdit", "RichTextLabel", "CheckBox", "OptionButton", "ItemList"]:
 		t.set_color("font_color", type, TEXT)
 	t.set_color("default_color", "RichTextLabel", TEXT)
@@ -124,16 +124,43 @@ static func picture(tex: Texture2D, factor := -1.0, region := Rect2()) -> Textur
 class Frame extends PanelContainer:
 	var title := ""
 	var header := true
+	var art: Control
 	func _init(caption := "", with_header := true) -> void:
 		title = caption
 		header = with_header
-		texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
-		texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		# The pixel-art frame is drawn by a crisp backing layer behind the
+		# panel; the panel and its text keep smooth filtering, which small
+		# glyphs need at fractional window scales.
+		art = FrameArt.new()
+		art.frame = self
+		art.show_behind_parent = true
+		art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		art.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+		art.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		add_child(art, false, Node.INTERNAL_MODE_FRONT)
 		var s := StyleBoxEmpty.new()
 		s.content_margin_left = 10; s.content_margin_right = 10
 		s.content_margin_top = (40 if header else 10); s.content_margin_bottom = 10
 		add_theme_stylebox_override("panel", s)
 	func _draw() -> void:
+		if header and not title.is_empty():
+			var font := get_theme_default_font()
+			draw_string(font, Vector2(14, 23), title, HORIZONTAL_ALIGNMENT_LEFT, size.x - 20, 17, Color.WHITE)
+	func _notification(what: int) -> void:
+		if what == NOTIFICATION_RESIZED: queue_redraw()
+		# The container lays its art out like content; it covers the whole
+		# frame instead.
+		if what == NOTIFICATION_SORT_CHILDREN and art != null:
+			art.position = Vector2.ZERO
+			art.size = size
+
+## The frame's pixel art: background, borders, header strip and corner.
+class FrameArt extends Control:
+	var frame
+	func _notification(what: int) -> void:
+		if what == NOTIFICATION_RESIZED: queue_redraw()
+	func _draw() -> void:
+		var header: bool = frame.header
 		var r := Rect2(Vector2.ZERO, size)
 		var bg = load("res://src/presentation/ui.gd").art("menu_background")
 		if bg != null:
@@ -151,8 +178,66 @@ class Frame extends PanelContainer:
 			draw_line(Vector2(3, 29), Vector2(size.x - 3, 29), Color.BLACK, 1.0)
 			var corner = load("res://src/presentation/ui.gd").art("menu_main_corner")
 			if corner != null: draw_texture_rect(corner, Rect2(0, 0, 16, 16), false)
-			if not title.is_empty():
-				var font := get_theme_default_font()
-				draw_string(font, Vector2(14, 23), title, HORIZONTAL_ALIGNMENT_LEFT, size.x - 20, 17, Color.WHITE)
-	func _notification(what: int) -> void:
-		if what == NOTIFICATION_RESIZED: queue_redraw()
+
+## Asks before an action that cannot be undone, over whatever is showing:
+## the supplied question with Yes and No. No (and Esc or B) is the default,
+## so a stray press never overwrites or throws anything away.
+static func ask(parent: Node, question: String, yes: Callable, no := Callable(), title := "") -> Control:
+	var q := Question.new()
+	q.title = title
+	q.yes = yes
+	q.no = no
+	# Its own layer covers the screen and is left alone by containers.
+	var layer := CanvasLayer.new()
+	layer.layer = 70
+	layer.process_mode = Node.PROCESS_MODE_ALWAYS
+	layer.add_child(q)
+	parent.add_child(layer)
+	q.build(question)
+	return q
+
+class Question extends Control:
+	var yes: Callable
+	var no: Callable
+	var no_button: Button
+	var title := ""
+	func build(question: String) -> void:
+		var kit = load("res://src/presentation/ui.gd")
+		set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		mouse_filter = Control.MOUSE_FILTER_STOP
+		var shade := ColorRect.new()
+		shade.color = Color(0, 0, 0, 0.55)
+		shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		add_child(shade)
+		var centre := CenterContainer.new()
+		centre.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		add_child(centre)
+		if title.is_empty() and kit.library != null: title = kit.library.text(240)
+		var f = kit.Frame.new(title)
+		f.custom_minimum_size = Vector2(440, 0)
+		centre.add_child(f)
+		var box := VBoxContainer.new()
+		box.add_theme_constant_override("separation", 12)
+		f.add_child(box)
+		box.add_child(kit.paragraph(question))
+		var row := HBoxContainer.new()
+		row.alignment = BoxContainer.ALIGNMENT_CENTER
+		row.add_theme_constant_override("separation", 12)
+		box.add_child(row)
+		var yes_button: Button = kit.button(kit.library.text(38) if kit.library != null else "Yes", _answer.bind(true))
+		no_button = kit.button(kit.library.text(39) if kit.library != null else "No", _answer.bind(false))
+		for b in [yes_button, no_button]:
+			b.custom_minimum_size = Vector2(140, 44)
+			b.alignment = HORIZONTAL_ALIGNMENT_CENTER
+			row.add_child(b)
+		no_button.grab_focus.call_deferred()
+	func _answer(accepted: bool) -> void:
+		if is_queued_for_deletion(): return
+		get_parent().queue_free()
+		queue_free()
+		var action := yes if accepted else no
+		if action.is_valid(): action.call()
+	func _unhandled_input(event: InputEvent) -> void:
+		if event.is_action_pressed("ui_cancel") or event.is_action_pressed("pause"):
+			get_viewport().set_input_as_handled()
+			_answer(false)

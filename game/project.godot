@@ -23,6 +23,9 @@ window/handheld/orientation=6
 
 [input_devices]
 pointing/emulate_mouse_from_touch=true
+; Tilt steering reads the gravity sensor, which Android leaves off unless asked.
+sensors/enable_accelerometer=true
+sensors/enable_gravity=true
 
 [physics]
 common/physics_interpolation=true
@@ -39,4 +42,40 @@ environment/defaults/default_clear_color=Color(0, 0, 0, 1)
 gof_light_direction={
 "type": "vec3",
 "value": Vector3(0.277, -0.959, 0)
+}
+gof_enhanced={
+"type": "float",
+"value": 0.0
+}
+gof_flash_0={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+gof_flash_color_0={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+gof_flash_1={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+gof_flash_color_1={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+gof_flash_2={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+gof_flash_color_2={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+gof_flash_3={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+gof_flash_color_3={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
 }

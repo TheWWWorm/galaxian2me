@@ -117,5 +117,8 @@ func ship_price(index: int, station_id: int) -> int:
 	return base - int(float(t) / 100.0 * base)
 
 ## What a dealer allows for the player's own hull.
-func ship_trade_in(index: int) -> int:
-	return int(float(cat.ship(index).get("price", 0)) / 1.25)
+## With every medal won, the old starter hull is a collector's piece worth
+## 50,000 (Ship.java's price override).
+func ship_trade_in(index: int, all_medals := false) -> int:
+	var price := 50000 if index == 10 and all_medals else int(cat.ship(index).get("price", 0))
+	return int(float(price) / 1.25)

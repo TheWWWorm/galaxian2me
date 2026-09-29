@@ -37,6 +37,13 @@ func setup(lib, station_id: int, catalogue) -> void:
 		m.shader = _sky_shader(m.shader)
 		sky.set_surface_override_material(i, m)
 	add_child(sky)
+	if station_id == -1:
+		# There is no ordinary star system in Void space: no planet, station
+		# markers or normal-system nebulae. The source uses the green default.
+		tint = Color(10.0 / 765.0, 136.0 / 765.0, 10.0 / 765.0)
+		sun_direction = Vector3(0, 0, 1)
+		_sprite(_sun_texture(0), sun_direction, 60.0, true)
+		return
 	var color: Array = system.get("color", [10, 136, 10])
 	if color.size() >= 3:
 		tint = Color(color[0] / 3.0 / 255.0, color[1] / 3.0 / 255.0, color[2] / 3.0 / 255.0)

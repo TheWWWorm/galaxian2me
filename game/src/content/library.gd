@@ -4,6 +4,7 @@ extends RefCounted
 ## sounds). Everything the running game knows about the original comes from
 ## here; nothing is invented when something is missing.
 
+const Mods := preload("res://src/content/mods.gd")
 const ShaderTemplate := preload("res://src/presentation/mascot_shader.gd")
 const Formats := preload("res://src/import/formats.gd")
 
@@ -27,6 +28,8 @@ var _textures := {}
 var _materials := {}
 var _shaders := {}
 var _sounds := {}
+## Replacement models by name (a template scene, or null for none).
+var _replaced := {}
 var _registry_by_name := {}
 
 static func installed() -> Array:
@@ -77,8 +80,18 @@ func constant(key: String, fallback = null):
 func image(name: String) -> Image:
 	if not _images.has(name):
 		var path := root.path_join("img/" + name + ".png")
-		_images[name] = Image.load_from_file(path) if FileAccess.file_exists(path) else null
+		var replaced := Mods.image("interface", name)
+		_images[name] = replaced if replaced != null else (Image.load_from_file(path) if FileAccess.file_exists(path) else null)
 	return _images[name]
+
+## Drops cached images, textures and audio so replaced files are read again.
+func forget_replacements() -> void:
+	_images.clear()
+	_textures.clear()
+	_sounds.clear()
+	for scene in _replaced.values():
+		if scene != null: scene.free()
+	_replaced.clear()
 
 func texture(name: String) -> Texture2D:
 	if not _textures.has(name):
@@ -93,7 +106,8 @@ func atlas_texture(name: String) -> Texture2D:
 	var key := "tex:" + name
 	if not _textures.has(key):
 		var path := root.path_join("tex/" + name + ".png")
-		var img := Image.load_from_file(path) if FileAccess.file_exists(path) else null
+		var img := Mods.image("textures", name)
+		if img == null: img = Image.load_from_file(path) if FileAccess.file_exists(path) else null
 		if img != null:
 			img.generate_mipmaps()
 		_textures[key] = ImageTexture.create_from_image(img) if img != null else null
@@ -104,12 +118,18 @@ func atlas_texture(name: String) -> Texture2D:
 func sound(name: String) -> AudioStream:
 	var key := "sfx:" + name
 	if not _sounds.has(key):
-		_sounds[key] = _wav(root.path_join("sfx/" + name + ".wav"))
+		var replaced := Mods.audio("sounds", name)
+		_sounds[key] = replaced if replaced != null else _wav(root.path_join("sfx/" + name + ".wav"))
 	return _sounds[key]
 
 func music(name: String) -> AudioStream:
 	var key := "mus:" + name
 	if not _sounds.has(key):
+		var replaced := Mods.audio("music", name)
+		if replaced != null:
+			if replaced is AudioStreamOggVorbis or replaced is AudioStreamMP3: replaced.loop = true
+			_sounds[key] = replaced
+			return replaced
 		var s := _wav(root.path_join("music/" + name + ".wav"))
 		if s != null:
 			s.loop_mode = AudioStreamWAV.LOOP_FORWARD
@@ -169,13 +189,15 @@ static func matrix(m: Array, base := 0) -> Transform3D:
 		Vector3(m[base + 2], m[base + 6], m[base + 10]))
 	return Transform3D(b, Vector3(m[base + 3], m[base + 7], m[base + 11]) * UNIT)
 
-## World transforms of every bone for the rest pose, or for one frame of an
-## action when `frame` holds that frame's per-bone local matrices.
+## World transforms of every bone. MTRA matrices are local action DELTAS,
+## not replacements for MBAC rest matrices: parent * rest * action. Vertices
+## remain bone-local, so no inverse-bind matrix is needed here.
 static func bone_transforms(source: Dictionary, frame: Array = []) -> Array[Transform3D]:
 	var out: Array[Transform3D] = []
 	var bones: Array = source.get("bones", [])
 	for i in bones.size():
-		var local := matrix(frame, i * 12) if frame.size() >= (i + 1) * 12 else matrix(bones[i].matrix)
+		var local := matrix(bones[i].matrix)
+		if frame.size() >= (i + 1) * 12: local = local * matrix(frame, i * 12)
 		var parent: int = bones[i].parent
 		out.append(out[parent] * local if parent >= 0 else local)
 	return out
@@ -305,11 +327,43 @@ func instance(name: String, skinned := false, pattern := 0) -> MeshInstance3D:
 	var node := MeshInstance3D.new()
 	node.name = name
 	if built.is_empty(): return node
+	# A player's glTF in place of a still model: scaled to the converted
+	# model's longest extent and centred where it sat. Animated (skinned)
+	# figures keep the original, whose motion the simulation relies on; the
+	# sky keeps it too, as the backdrop sizes itself from its mesh.
+	if not skinned and name != "skybox":
+		var scene := replacement_model(name)
+		if scene != null:
+			_fit(scene, (built[0] as Mesh).get_aabb())
+			node.add_child(scene)
+			return node
 	node.mesh = built[0]
 	for i in built[1].size():
 		node.set_surface_override_material(i, material(built[1][i], skinned))
 	if skinned: node.custom_aabb = built[2].grow(built[2].get_longest_axis_size())
 	return node
+
+## A fresh copy of the player's replacement for `name`, or null.
+func replacement_model(name: String) -> Node3D:
+	if not _replaced.has(name): _replaced[name] = Mods.model(name)
+	var template: Node3D = _replaced[name]
+	return template.duplicate() as Node3D if template != null else null
+
+static func _fit(scene: Node3D, to: AABB) -> void:
+	var box := _scene_bounds(scene, Transform3D.IDENTITY)
+	if box.size == Vector3.ZERO: return
+	var k := to.get_longest_axis_size() / maxf(0.0001, box.get_longest_axis_size())
+	scene.transform = Transform3D(Basis.from_scale(Vector3.ONE * k), to.get_center() - box.get_center() * k)
+
+static func _scene_bounds(node: Node, at: Transform3D) -> AABB:
+	var here: Transform3D = at * ((node as Node3D).transform if node is Node3D else Transform3D.IDENTITY)
+	var box := AABB()
+	if node is MeshInstance3D and node.mesh != null: box = here * node.mesh.get_aabb()
+	for c in node.get_children():
+		var child := _scene_bounds(c, here)
+		if child.size == Vector3.ZERO: continue
+		box = child if box.size == Vector3.ZERO else box.merge(child)
+	return box
 
 func instance_by_id(model: int, skinned := false) -> MeshInstance3D:
 	return instance(model_name(model), skinned)

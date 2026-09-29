@@ -14,7 +14,10 @@ const KIND_CHALLENGE := 12
 const KIND_MINING := 18
 const KIND_EQUIP := 22
 
-var game
+## Game owns this system; a back-reference must not keep an old session alive.
+var _owner: WeakRef
+var game:
+	get: return _owner.get_ref()
 var library
 var steps: Array = []
 var start := {}
@@ -24,7 +27,7 @@ var debriefings: Array = []
 var journal_lines: Array = []
 
 func _init(owner) -> void:
-	game = owner
+	_owner = weakref(owner)
 	library = owner.library
 	var table: Dictionary = library.data.get("campaign", {})
 	steps = table.get("steps", [])
@@ -62,11 +65,12 @@ func _find_dialogue_tables() -> void:
 ## The journal table: one string index per step, all within the story's
 ## journal block of the string table.
 func _find_journal() -> void:
-	var want := steps.size() + 1
+	# The recovered table covers active steps, not the terminal empty step.
+	var want := steps.size()
 	for key in library.data.constants:
 		if not key.ends_with(":[S"): continue
 		var v = library.data.constants[key]
-		if v is Array and v.size() >= want and v.size() <= want + 4 and v.all(func(x): return x is int and x >= 300 and x < 450):
+		if v is Array and v.size() >= want and v.size() <= want + 4 and v.all(func(x): return (x is int or x is float) and x == int(x) and x >= 300 and x < 450):
 			journal_lines = v
 			return
 
@@ -111,6 +115,7 @@ func current() -> Dictionary:
 ## Advances to the next step and builds its story mission.
 func advance() -> void:
 	var s = game.session
+	if s.story_step >= 45: return
 	s.story_step += 1
 	var rec := step_record(s.story_step)
 	s.story_mission = {}
@@ -120,10 +125,143 @@ func advance() -> void:
 		_apply_effect(e)
 	for key in rec.get("statics", {}):
 		_apply_static(key, rec.statics[key])
+	if s.story_step in [4, 6]: _handover_tutorial_cargo(rec)
+	if s.story_step == 10: _return_tutorial_loan(rec)
+	if s.story_step == 18: _apply_alioth_livery(rec)
+	if s.story_step == 25: _protect_void_cargo(rec)
+	if s.story_step == 34: _handover_khador_crystals(rec)
+	if s.story_step == 45: _pay_terminal_reward(rec)
+
+## The terminal record has no mission, but its progression owner makes one
+## scalar credit addition. Resolve that owner through the typed mission
+## assignment and read the amount as data; never execute an imported call.
+func _pay_terminal_reward(rec: Dictionary) -> void:
+	if not rec.get("missions", []).is_empty(): return
+	var owner := ""
+	for effect in rec.get("effects", []):
+		if effect.get("desc") == "(L%s;)V" % _mission_class():
+			owner = str(effect.get("owner", ""))
+	if owner.is_empty(): return
+	var amounts: Array = []
+	for effect in rec.get("effects", []):
+		if effect.get("owner") != owner or effect.get("desc") != "(I)V": continue
+		var args: Array = effect.get("args", [])
+		if args.size() == 1 and game.session._whole(args[0], 1): amounts.append(int(args[0]))
+	if amounts.size() == 1: game.session.credits += amounts[0]
+
+## The supplied step34 removes the delivered crystals, then unlocks the
+## Khador-drive recipe and credits those crystals towards its construction.
+## Product85 is a blueprint, NOT station85 or a shelf assignment. The loop
+## over recipe objects is not in the imported straight-line effects, so this
+## is a native transition using the actual removal and ingredient records.
+const KHADOR_DRIVE := 85
+
+func _handover_khador_crystals(rec: Dictionary) -> void:
+	if game.cat.type(KHADOR_DRIVE) != Catalogue.Type.JUMP_DRIVE: return
+	var recipe: Dictionary = game.cat.item(KHADOR_DRIVE)
+	var ingredients: Array = recipe.get("ingredients", [])
+	var amounts: Array = recipe.get("amounts", [])
+	if ingredients.size() != amounts.size(): return
+	for effect in rec.get("effects", []):
+		if effect.get("owner") != _ship_class() or effect.get("desc") != "(II)Z": continue
+		var args: Array = effect.get("args", [])
+		if args.size() != 2 or not game.session._whole(args[0]) or not game.session._whole(args[1]): continue
+		var item := int(args[0])
+		var amount := int(args[1])
+		var matching_ingredient := false
+		for i in ingredients.size():
+			if int(ingredients[i]) == item and int(amounts[i]) == amount: matching_ingredient = true
+		if amount <= 0 or not matching_ingredient or game.session.cargo_count(item) < amount: return
+		var blueprint: Dictionary = game.session.blueprints.get(str(KHADOR_DRIVE), {"progress": {}}).duplicate(true)
+		var progress: Dictionary = blueprint.get("progress", {})
+		progress[str(item)] = int(progress.get(str(item), 0)) + amount
+		blueprint.progress = progress
+		# The source's contribution uses station -1 (no production location),
+		# then clears its cost accumulator. It never grants a completed drive.
+		blueprint.cost = 0
+		game.session.add_cargo(item, -amount)
+		game.session.blueprints[str(KHADOR_DRIVE)] = blueprint
+		return
+
+## The supplied cargo lookup at step 25 marks carried alien remains
+## unsaleable. Its conditional setter is not present in recovered effects;
+## this native transition follows cf.java, rather than executing that code.
+func _protect_void_cargo(rec: Dictionary) -> void:
+	if game.session.cargo_count(STEP27_REMAINS) <= 0: return
+	for effect in rec.get("effects", []):
+		if effect.get("owner") == _ship_class() and str(effect.get("desc", "")).begins_with("()[L"):
+			var protected: Dictionary = game.session.flags.get("unsaleable_cargo", {})
+			protected[str(STEP27_REMAINS)] = true
+			game.session.flags["unsaleable_cargo"] = protected
+			return
+
+## The post-Alioth ship setter selects Terran colors in the supplied story.
+## Resolve its owner from the typed ship/equipment lookup, then consume only
+## this known transition's numeric livery constant. Never execute the call.
+func _apply_alioth_livery(rec: Dictionary) -> void:
+	var owner := _ship_class()
+	if owner.is_empty(): return
+	for effect in rec.get("effects", []):
+		if effect.get("owner") != owner or effect.get("desc") != "(I)V": continue
+		var args: Array = effect.get("args", [])
+		if args.size() != 1 or not (args[0] is int or args[0] is float): continue
+		var faction := int(args[0])
+		if faction >= 0 and faction < 10: game.session.ship.faction = faction
+		return
+
+func _ship_class() -> String:
+	for lookup in step_record(10).get("effects", []):
+		var desc := str(lookup.get("desc", ""))
+		if desc.begins_with("(I)L") and desc.ends_with(";"):
+			return str(lookup.get("owner", ""))
+	return ""
+
+## Gunant takes the first haul before the full-hold lesson, then the second
+## haul when he gives Keith the ship. These two native transitions correspond
+## to the supplied step-four null cargo array and step-six cargo-clear call.
+## Resolve the ship owner structurally from the typed equipment lookup rather
+## than depending on its obfuscated class name. No imported code is executed.
+func _handover_tutorial_cargo(rec: Dictionary) -> void:
+	var ship_owner := _ship_class()
+	if ship_owner.is_empty(): return
+	for effect in rec.get("effects", []):
+		if str(effect.get("owner", "")) != ship_owner: continue
+		var desc := str(effect.get("desc", ""))
+		var args: Array = effect.get("args", [])
+		var first_handover := int(rec.step) == 4 and desc.begins_with("([L") and desc.ends_with(";)V") and args.size() == 1 and args[0] == null
+		var ship_handover := int(rec.step) == 6 and desc == "()V" and args.is_empty()
+		if first_handover or ship_handover:
+			game.session.cargo.clear()
+			return
+
+## Gunant keeps his prototype after giving the player the ship. Read the
+## equipment type from the supplied step's typed lookup/removal constants;
+## this is a native inventory transition, not execution of imported code.
+func _return_tutorial_loan(rec: Dictionary) -> void:
+	for lookup in rec.get("effects", []):
+		var desc := str(lookup.get("desc", ""))
+		var args: Array = lookup.get("args", [])
+		if not desc.begins_with("(I)L") or not desc.ends_with(";") or args.size() != 1: continue
+		if not (args[0] is int or args[0] is float): continue
+		var removal := "(" + desc.substr(3) + ")V"
+		var paired := false
+		for effect in rec.get("effects", []):
+			if effect.get("owner") == lookup.get("owner") and effect.get("desc") == removal: paired = true
+		if not paired: continue
+		for slots in game.session.equipment:
+			for index in slots.size():
+				var item = slots[index]
+				if item != null and game.cat.type(int(item.id)) == int(args[0]):
+					slots[index] = null
+					return
+		return
 
 ## Settings the progression applies to the mission it just built.
 func _apply_effect(e: Dictionary) -> void:
 	var m: Dictionary = game.session.story_mission
+	# The terminal hidden-mission setter refers to the source empty sentinel,
+	# not a new native mission containing only a visibility field.
+	if m.is_empty(): return
 	if e.owner == _mission_class():
 		if e.desc == "(I)V" and e.args.size() == 1:
 			m.target = _value(e.args[0])
@@ -134,8 +272,64 @@ func _apply_effect(e: Dictionary) -> void:
 			m.item = int(e.args[0]); m.amount = int(e.args[1])
 		elif e.desc == "(Z)V" and e.args.size() == 1: m.visible = bool(e.args[0])
 
-func _apply_static(_key: String, _value) -> void:
-	pass
+## The supplied rescue return writes a true entry into the system-reveal
+## array. Resolve that field from its known progression record and shape,
+## not its obfuscated class name. These are data assignments, not calls to
+## imported code. A zero in a recovered assignment snapshot is not a request
+## to erase discoveries earned during earlier steps.
+func _system_unlock_field() -> String:
+	var fields: Dictionary = step_record(23).get("statics", {})
+	var found := ""
+	for key in fields:
+		var value = fields[key]
+		if not str(key).ends_with(":[Z") or not value is Array or value.size() != game.cat.system_count(): continue
+		if not found.is_empty(): return ""
+		found = str(key)
+	return found
+
+## cf.java's g/h are the wormhole system/station (also identified by the
+## original map and station classes). Resolve their names from the first
+## paired assignment and its actual mission destination, not obfuscation.
+func _wormhole_fields() -> Dictionary:
+	var rec := step_record(24)
+	var missions: Array = rec.get("missions", [])
+	if missions.size() != 1 or missions[0].size() < 3: return {}
+	var raw = missions[0][2]
+	if not game.session._whole(raw): return {}
+	var station_id := int(raw)
+	var system_id: int = game.cat.system_of_station(station_id)
+	if system_id < 0 or station_id == system_id: return {}
+	var fields := {}
+	for key in rec.get("statics", {}):
+		var value = rec.statics[key]
+		if not str(key).ends_with(":I") or not game.session._whole(value): continue
+		var label := "wormhole_station" if int(value) == station_id else ("wormhole_system" if int(value) == system_id else "")
+		if label.is_empty(): continue
+		if fields.has(label): return {}
+		fields[label] = str(key)
+	return fields if fields.size() == 2 else {}
+
+func _apply_static(key: String, value) -> void:
+	var wormhole := _wormhole_fields()
+	for label in wormhole:
+		if key != wormhole[label]: continue
+		# The supplied finale uses -10 for a disabled portal. Store the
+		# engine's canonical absent-address sentinel, never a new station.
+		if game.session._whole(value, -10) and int(value) == -10:
+			game.session.flags[label] = -1
+			return
+		if not game.session._whole(value, -1): return
+		var id := int(value)
+		if id >= 0:
+			if label == "wormhole_station" and game.cat.station(id).is_empty(): return
+			if label == "wormhole_system" and game.cat.system(id).is_empty(): return
+		game.session.flags[label] = id
+		return
+	var field := _system_unlock_field()
+	if field.is_empty() or key != field or not value is Array or value.size() != game.cat.system_count(): return
+	if not value.all(func(v): return v is bool or ((v is int or v is float) and (v == 0 or v == 1))): return
+	for i in value.size():
+		if bool(value[i]): game.session.unlocked_systems[str(i)] = true
 
 func _mission_class() -> String:
 	var rec := step_record(1)
@@ -166,6 +360,7 @@ func on_dock(station_id: int) -> void:
 ## paid, and the next step begins. Returns the debriefing lines.
 func conclude() -> Array:
 	var m: Dictionary = game.session.story_mission
+	if m.is_empty(): return []
 	var step: int = game.session.story_step
 	var lines := dialogue(step, 1)
 	game.pending_dialogue.append_array(lines)
@@ -209,6 +404,9 @@ func _station_events(station_id: int) -> void:
 		27:
 			if int(m.get("station", -1)) == station_id:
 				s.add_cargo(STEP27_REMAINS, -s.cargo_count(STEP27_REMAINS))
+				var protected: Dictionary = s.flags.get("unsaleable_cargo", {})
+				protected.erase(str(STEP27_REMAINS))
+				if protected.is_empty(): s.flags.erase("unsaleable_cargo")
 
 ## Whether a story mission's goal is met, by its kind, as the original checks
 ## it both while docked and in flight. `flight_ms` is the time spent in space
@@ -217,7 +415,11 @@ func check(docked: bool, station_id: int, flight_ms := 0) -> bool:
 	var m: Dictionary = game.session.story_mission
 	if m.is_empty(): return false
 	var s = game.session
+	# -1 is an actual world identity, never a wildcard or a caller's way to
+	# satisfy a Void arrival while still flying over a normal station.
 	var here: bool = int(m.get("station", -2)) == station_id
+	if station_id == -1 and not s.in_void: return false
+	if s.in_void and (docked or station_id != -1): return false
 	var target: int = _value(m.get("target", 0))
 	match int(m.get("kind", -1)):
 		20: return not docked and here and flight_ms > 10000
@@ -251,7 +453,10 @@ func _counter_target(m: Dictionary) -> int:
 	var raw = m.get("target_expr", null)
 	if raw is Dictionary and raw.has("expr"):
 		var e: Array = raw.expr
-		if int(e[0]) == 96 and e[2] is int: return int(m.get("jobs_at_start", 0)) + int(e[2])
+		# Imported constants and saved expressions pass through JSON, whose
+		# numeric values are floats even when the original constant is an int.
+		if e.size() == 3 and int(e[0]) == 96 and (e[2] is int or e[2] is float):
+			return int(m.get("jobs_at_start", 0)) + int(e[2])
 	return _value(m.get("target", 0))
 
 ## Kept for callers that only ask about docking.

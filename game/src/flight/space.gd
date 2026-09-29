@@ -14,6 +14,11 @@ const AI := preload("res://src/flight/ai.gd")
 const Backdrop := preload("res://src/presentation/backdrop.gd")
 const Story := preload("res://src/flight/story.gd")
 const Mining := preload("res://src/flight/mining.gd")
+const Wormhole := preload("res://src/flight/wormhole.gd")
+const Navigation := preload("res://src/simulation/navigation.gd")
+const Wingmen := preload("res://src/flight/wingmen.gd")
+const Tractor := preload("res://src/flight/tractor.gd")
+const Medals := preload("res://src/simulation/medals.gd")
 
 signal event(kind: String, data: Dictionary)
 
@@ -35,8 +40,11 @@ var cat
 var lib
 var rng := RandomNumberGenerator.new()
 var bodies: Array = []
+## The station's far asteroid field, where pirate hideouts may lie.
+var field_centre := Vector3(0, 0, 60000)
 var player: Body
 var station: Body
+var mothership: Body
 var gate: Body
 var arrival: Body
 var projectiles: Array = []
@@ -46,23 +54,85 @@ var lock_time := 0.0
 var locked := false
 var lock_needed := 4000.0
 var clock := 0
+## A docking/star/gate callback replaces this world synchronously. It must
+## not finish its old physics frame against the newly settled session.
+var completed_flight := false
 var autopilot := false
+## The autopilot is flying the mission route rather than to a target.
+var autopilot_waypoint := false
+## The autopilot is flying to the asteroid field.
+var autopilot_field := false
+const FIELD_ARRIVAL := 15000.0
+## Time acceleration during autopilot travel (1 = normal).
+var time_scale := 1
+const TIME_SCALES := [1, 2, 4, 8]
+const WARP_CLEARANCE := 25000.0
+
+## Whether the flight may run faster than real time: only while the
+## autopilot flies, with no hostile near and nothing staged.
+func time_warp_allowed() -> bool:
+	if not autopilot or not player.alive or docking >= 0 or jumping >= 0 or using_jump_drive: return false
+	if mining_target != null or portal_arriving(): return false
+	if story != null and (story.controls_locked or story.hud_hidden): return false
+	for h in hostiles():
+		if h.pos.distance_to(player.pos) < WARP_CLEARANCE: return false
+	return true
 var docking := -1
 var jumping := -1
 var jump_destination := {}
+var using_jump_drive := false
+var drive_origin := Vector3.ZERO
+var drive_basis := Basis.IDENTITY
 var travelling := -1
 var travel_station := -1
 var boost_time := 0
 var boost_ready := true
+## Cloaking device: while `cloak` is positive the player is hidden from
+## other ships. `cloak_time` counts up while cloaked (to the device's
+## duration) and while recharging (to its reload); -1 means ready.
 var cloak := 0
+var cloak_time := -1
+var cloak_duration := 0
+var cloak_reload := 0
+## Presentation: the ship's sideways stretch-and-collapse as it cloaks.
+var cloak_coef := 0.0
+## Turret view: the ship holds its course while the player swings the
+## fitted turret (yaw all round, pitch up to 500/4096 of a turn) and fires it.
+var turret_mode := false
+var turret_yaw := 0.0
+var turret_pitch := 0.0
+const TURRET_PITCH_MAX := 500.0 / 4096.0 * TAU
 var station_boxes: Array = []
 var stats := {}
 var in_void := false
+var wormhole: Wormhole
+## Preserve entry context for source-scripted arrival poses after setup.
+var entry_mode := ""
+var portal_crossed := false
+## Physical portal arrival has its own camera and collision/input boundary;
+## it also exists when the current mission has no scripted Story scene.
+const PORTAL_ARRIVAL_MS := 7000
+var portal_arrival_ms := -1
+var portal_arrival_camera := Vector3.ZERO
+var void_regeneration_ms := 0
+var fallen_voids: Array = []
 var shots_fired := 0
 var kills := 0
 var story: Story = null
+## A call from the local ships over the radio (friendly fire, the alarm):
+## {speaker, name, text, face} while `radio_until` is ahead of the clock.
+var radio := {}
+var radio_until := 0
+## The original warns once per visit that you hit a local ship and raises
+## the alarm once when the locals turn on you.
+var friendly_fire_alerted := false
+var locals_alarmed := false
+## The generic speakers of the original's radio calls, by race (texts 819+):
+## Terran, Vossk, Nivelian, Midorian.
+const RACE_SPEAKERS := {0: 23, 1: 22, 2: 24, 3: 21}
 var mining: Mining = null
 var mining_target: Body = null
+var tractor := Tractor.new()
 
 func _init(owner) -> void:
 	game = owner
@@ -70,23 +140,76 @@ func _init(owner) -> void:
 	lib = owner.library
 	rng.randomize()
 
+## Called by the owning flight screen after it leaves the tree. Story owns a
+## back-reference to this simulation and ships can target one another, so
+## reference counting alone cannot release a discarded flight world.
+func dispose() -> void:
+	tractor.reset()
+	var pending: Array = bodies.duplicate()
+	pending.append_array(fallen_voids)
+	pending.append_array(ambient)
+	pending.append_array([player, station, gate, arrival, target, mining_target])
+	if story != null:
+		pending.append_array(story.cast)
+		story.space = null
+		story = null
+	for projectile in projectiles:
+		pending.append(projectile.get("owner"))
+		pending.append(projectile.get("target"))
+	var seen := {}
+	while not pending.is_empty():
+		var body = pending.pop_back()
+		if not (body is Body) or seen.has(body.get_instance_id()): continue
+		seen[body.get_instance_id()] = true
+		# Include targets already removed from the active body list.
+		for value in body.ai.values():
+			if value is Body: pending.append(value)
+		body.ai.clear()
+	bodies.clear()
+	fallen_voids.clear()
+	ambient.clear()
+	wormhole = null
+	projectiles.clear()
+	effects.clear()
+	player = null
+	station = null
+	mothership = null
+	gate = null
+	arrival = null
+	target = null
+	mining_target = null
+	mining = null
+	game = null
+	cat = null
+	lib = null
+
 # ------------------------------------------------------------------ layout
+
+var empty_orbit := false
 
 func build() -> void:
 	var s = game.session
 	var st: Dictionary = cat.station(s.station_id)
 	var sys: Dictionary = cat.system(s.system_index)
-	in_void = false
+	in_void = s.in_void
 	# The station and its module boxes.
 	station = Body.new()
 	station.kind = Body.Kind.STATION
 	station.name = str(st.get("name", ""))
-	station.station_id = s.station_id
+	station.station_id = s.location_id()
 	station.faction = int(sys.faction)
 	station.radius = 0.0
 	station.hull = 999999
-	bodies.append(station)
-	_station_boxes(s.station_id, int(sys.faction))
+	# The first two story scenes play in an empty orbit: the original builds
+	# no station there, and the opening camera sits where it would be.
+	empty_orbit = not in_void and s.story_step < 2 and s.station_id == 78
+	station.visible = not in_void and not empty_orbit
+	station.solid = station.visible
+	if station.visible:
+		bodies.append(station)
+		_station_boxes(s.station_id, int(sys.faction))
+	elif in_void:
+		_build_mothership()
 	# Gate and arrival point, placed as the original places them.
 	var r := JavaRandom.new(s.station_id << 1)
 	var turn := 0
@@ -94,7 +217,7 @@ func build() -> void:
 		turn += (-250 - r.next_int(500)) if r.next_int(2) == 0 else (250 + r.next_int(500))
 		var distance := (GATE_DISTANCE if n == 1 else ARRIVAL_DISTANCE) + turn * 3
 		var p := Assembly.basis(0, turn, 0) * Assembly.position([0, 0, distance]) / Assembly.UNIT
-		if n == 1 and int(sys.get("jumpgate_station", -1)) == s.station_id:
+		if n == 1 and not in_void and int(sys.get("jumpgate_station", -1)) == s.station_id:
 			gate = Body.new()
 			gate.kind = Body.Kind.GATE
 			gate.name = lib.text(271)
@@ -109,16 +232,65 @@ func build() -> void:
 			arrival.pos = p
 			arrival.visible = false
 			arrival.solid = false
-	_asteroids(s.station_id)
-	_stars(s.station_id, sys)
+	if in_void:
+		arrival.pos = Vector3(_void_arrival_coordinate(), _void_arrival_coordinate(), _void_arrival_coordinate())
+	_asteroids(s.location_id())
+	if not in_void: _stars(s.station_id, sys)
+	if s.story_step <= 42:
+		wormhole = Wormhole.new()
+		wormhole.name = lib.text(269)
+		wormhole.model = lib.model_name(6805)
+		wormhole.pos = Vector3(rng.randi_range(-40000, 39999), rng.randi_range(-20000, 19999), rng.randi_range(40000, 79999))
+		if _recurring_wormhole(): wormhole.reveal()
+		bodies.append(wormhole)
 	_player()
 	_traffic()
 	_place_player()
+	if game.arrival_mode == "wormhole" and s.story_step > 1 and s.story_step < 43:
+		_begin_portal_arrival()
+	var device: Dictionary = s.equipped_of_type(Catalogue.Type.CLOAK)
+	if not device.is_empty():
+		cloak_duration = maxi(1, cat.attr(int(device.id), Catalogue.A_CLOAK_LENGTH))
+		cloak_reload = maxi(1, cat.attr(int(device.id), Catalogue.A_CLOAK_RELOAD))
 	var scanner: Dictionary = s.equipped_of_type(Catalogue.Type.SCANNER)
 	lock_needed = float(cat.attr(int(scanner.id), Catalogue.A_SCAN_LOCK)) if not scanner.is_empty() else 4000.0
+	entry_mode = game.arrival_mode
 	game.arrival_mode = ""
 	story = Story.new(self)
 	if not story.setup(): story = null
+	Wingmen.spawn(self)
+
+func _void_arrival_coordinate() -> float:
+	return float(rng.randi_range(50000, 99999)) * (1.0 if rng.randi_range(0, 1) == 0 else -1.0)
+
+## cw.java uses model 3337 at the origin in Void space. It is a lockable
+## mothership, never a normal station or a valid docking destination.
+func _build_mothership() -> void:
+	mothership = Body.new()
+	mothership.kind = Body.Kind.MOTHERSHIP
+	mothership.name = lib.text(238) + " " + lib.text(40)
+	mothership.model = lib.model_name(3337)
+	mothership.faction = 9
+	mothership.combat_active = false
+	var table = lib.constant("cw#b:[I")
+	var i := (3337 - 3301) * 6
+	if table is Array and table.size() > i + 5:
+		mothership.ai.centre = Vector3(table[i], table[i + 1], table[i + 2])
+		# The same source box constructor as normal station modules takes
+		# padded FULL dimensions and halves each integer, including odd sizes.
+		mothership.ai.half = Vector3((int(table[i + 3]) + 5000) >> 1,
+			(int(table[i + 4]) + 5000) >> 1, (int(table[i + 5]) + 5000) >> 1)
+		mothership.radius = mothership.ai.half.length()
+	bodies.append(mothership)
+
+func _inside_mothership(p: Vector3) -> bool:
+	if mothership == null or not mothership.ai.has("half"): return false
+	var d: Vector3 = (p - mothership.pos - mothership.ai.centre).abs()
+	var half: Vector3 = mothership.ai.half
+	return d.x < half.x and d.y < half.y and d.z < half.z
+
+func _recurring_wormhole() -> bool:
+	return in_void or int(game.session.flags.get("wormhole_station", -2)) == game.session.station_id
 
 ## Collision boxes of the station's modules: the original's per-module table
 ## (centre and half-extents, plus a 5000-unit margin), turned with each part.
@@ -142,10 +314,23 @@ func _station_boxes(station_id: int, faction: int) -> void:
 		var i := (id - 3301) * 6
 		if table is Array and i >= 0 and i + 5 < table.size():
 			centre = Vector3(table[i], table[i + 1], table[i + 2])
-			half = Vector3(table[i + 3], table[i + 4], table[i + 5]) + Vector3(5000, 5000, 5000)
+			# The supplied station table stores full dimensions. Its box
+			# constructor halves each integer after the 5000-unit padding;
+			# treating these as half-extents doubles every module's collision.
+			half = Vector3((int(table[i + 3]) + 5000) >> 1,
+				(int(table[i + 4]) + 5000) >> 1, (int(table[i + 5]) + 5000) >> 1)
 		station_boxes.append({"basis": b, "origin": origin, "centre": centre, "half": half})
 		extent = maxf(extent, origin.length() + half.length())
 	station.radius = extent
+
+## The world centre of the station module containing `p`, or null.
+func station_box_at(p: Vector3, margin := 0.0):
+	for box in station_boxes:
+		var local: Vector3 = box.basis.inverse() * (p - box.origin) - box.centre
+		var h: Vector3 = box.half + Vector3.ONE * margin
+		if absf(local.x) < h.x and absf(local.y) < h.y and absf(local.z) < h.z:
+			return box.origin + box.basis * box.centre
+	return null
 
 func _inside_station(p: Vector3, margin := 0.0) -> bool:
 	for box in station_boxes:
@@ -157,9 +342,10 @@ func _inside_station(p: Vector3, margin := 0.0) -> bool:
 ## Asteroid fields: half near the station, half around a field centre fixed
 ## per station. Ores are drawn by the original's weighted table.
 func _asteroids(station_id: int) -> void:
-	var weights := _ore_table(station_id)
+	var weights: Array = [] if in_void or empty_orbit else _ore_table(station_id)
 	var seeded := JavaRandom.new(station_id)
 	var field := Vector3(-50000 + seeded.next_int(100000), -50000 + seeded.next_int(100000), 10000 + seeded.next_int(100000))
+	field_centre = field
 	for i in ASTEROIDS:
 		var ore := 154
 		var cursor := 0
@@ -178,9 +364,9 @@ func _asteroids(station_id: int) -> void:
 		var p := centre + Vector3(rng.randi_range(-30000, 30000), rng.randi_range(-30000, 30000), rng.randi_range(-30000, 30000))
 		var a := Body.new()
 		a.kind = Body.Kind.ASTEROID
-		a.model = "asteroid"
-		a.ore = ore
-		a.pattern_frame = ore - 154
+		a.model = lib.model_name(6804) if in_void else "asteroid"
+		a.ore = 164 if in_void else ore
+		a.pattern_frame = 0 if in_void else ore - 154
 		a.pos = p
 		var q := 1024 + rng.randi_range(0, 2447)
 		var rr := 1024 + rng.randi_range(0, 2447)
@@ -238,9 +424,9 @@ func _player() -> void:
 	player.pattern_frame = Assembly.ship_frame(int(s.ship.faction))
 	player.radius = PLAYER_RADIUS
 	player.hull_max = int(st.armor)
-	player.hull = clampi(int(s.ship.hull) - int(st.armor_plate), 1, player.hull_max) if int(s.ship.hull) > 0 else player.hull_max
 	player.armor_max = int(st.armor_plate)
-	player.armor = mini(int(s.ship.get("armor", st.armor_plate)), player.armor_max)
+	player.armor = clampi(int(s.ship.get("armor", st.armor_plate)), 0, player.armor_max)
+	player.hull = clampi(int(s.ship.hull) - player.armor, 1, player.hull_max) if int(s.ship.hull) > 0 else player.hull_max
 	player.shield_max = int(st.shield)
 	player.shield = float(s.ship.get("shield", st.shield))
 	player.shield_recharge = int(st.shield_recharge)
@@ -294,9 +480,26 @@ func weapon(id: int) -> Dictionary:
 		"blast": float(cat.attr(id, Catalogue.A_BLAST_RADIUS, 0)),
 		"model": lib.model_name(model) if model >= 0 else "", "cooldown": 0, "count": 1, "offset": Vector3.ZERO}
 
-## Ambient traffic when no mission shapes the scene: locals of the system's
-## faction, jump-in arrivals, freighters and, by safety, pirates.
+## Ambient traffic when no mission shapes the scene, as the original's
+## level builder lays it out: local fighters patrolling a square about the
+## station, departing ships that launch and jump away, big freighters
+## drifting through, raiders (pirates or the local enemy race) by the
+## system's safety, and pirates lying in wait on courier and passenger jobs.
+## Destroyed locals and departing ships return from the station later;
+## raiders come back for up to two more waves.
+var ambient: Array = []
+var ambient_ms := 0
+var jumper_ms := 0
+var raid_waves := 0
+
 func _traffic() -> void:
+	ambient.clear()
+	if in_void:
+		for _i in rng.randi_range(1, 3):
+			var b := _spawn_ship(9, Vector3.ZERO, false)
+			b.pos = Vector3(rng.randi_range(-40000, 39999), rng.randi_range(-40000, 39999), rng.randi_range(-40000, 39999))
+			b.ai.route = AI.patrol_route(true)
+		return
 	var s = game.session
 	var sys: Dictionary = cat.system(s.system_index)
 	var faction: int = int(sys.faction)
@@ -304,25 +507,115 @@ func _traffic() -> void:
 	var mido_early: bool = s.system_index == 15 and s.story_step < 16
 	var home: bool = s.station_id == 78
 	var pirate_chance: int = [80, 60, 35, 10][clampi(safety, 0, 3)]
-	var pirates: bool = not mido_early and rng.randi_range(0, 99) < pirate_chance
-	var other: int = 8 if rng.randi_range(0, 99) < 75 else _rival(faction)
-	var y := rng.randi_range(0, 3) if pirates else 0
-	var w := 0 if home else rng.randi_range(0, 1)
-	var x := 0 if (home or mido_early) else rng.randi_range(0, 4)
-	var v := (0 if home else rng.randi_range(0, 1)) + (0 if mido_early else safety) + x / 4
-	if s.station_id == 10 or v + w + x + y == 0: v = 4
-	for _i in v: _spawn_ship(faction, Vector3(0, 0, 10000), false)
-	for _i in w:
-		var b := _spawn_ship(other, Vector3(rng.randi_range(-200000, 200000), rng.randi_range(-100000, 100000), rng.randi_range(50000, 150000)), false)
-		b.ai.mode = "arrive"
-	for i in x:
-		var fp := Vector3(rng.randi_range(-80000, -20000) * (1 if rng.randi_range(0, 1) == 0 else -1), rng.randi_range(-20000, 20000), -rng.randi_range(-80000, 80000))
-		_spawn_ship(faction, fp, true)
-	if y > 0:
-		var camp := Vector3(rng.randi_range(-50000, 50000), 0, rng.randi_range(50000, 100000))
-		for _i in y:
-			var p := _spawn_ship(8, camp, false)
-			p.ai.home = camp
+	var raid: bool = not mido_early and rng.randi_range(0, 99) < pirate_chance
+	var camp := Vector3(rng.randi_range(-50000, 49999), 0, rng.randi_range(50000, 99999))
+	var attacker: int = 8 if rng.randi_range(0, 99) < 75 else _rival(faction)
+	var raiders := rng.randi_range(0, 3) if raid else 0
+	var jumpers := 0 if home else rng.randi_range(0, 1)
+	var big := 0 if (home or mido_early) else rng.randi_range(0, 4)
+	var locals := (0 if home else rng.randi_range(0, 1)) + (0 if mido_early else safety) + big / 4
+	var lurkers := 0
+	var job: Dictionary = s.job
+	if not job.is_empty() and int(job.get("kind", -1)) in [0, 11] and not bool(job.get("done", false)):
+		lurkers = int(5.0 * float(job.get("difficulty", 0)) / 10.0)
+	if s.station_id == 10 or locals + jumpers + big + raiders + lurkers == 0: locals = 4
+	for _i in locals:
+		var b := _spawn_ship(faction, Vector3(0, 0, 10000), false)
+		b.ai.route = AI.patrol_route(false)
+		b.ai.leg = rng.randi_range(0, 3)
+		b.ai.role = "local"
+		ambient.append(b)
+	for _i in jumpers:
+		var b := _spawn_ship(faction, Vector3.ZERO, false, _hull_for(attacker, false))
+		b.ai.role = "jumper"
+		b.ai.route = [Vector3(rng.randi_range(-200000, 199999), rng.randi_range(-100000, 99999), rng.randi_range(50000, 149999))]
+		_retire(b)
+		ambient.append(b)
+	var carrier: bool = faction == 0 and rng.randi_range(0, 99) < 30
+	for i in big:
+		var b: Body
+		if carrier and i == 0:
+			b = _spawn_ship(faction, Vector3.ZERO, true, 14)
+			b.pos = Vector3(rng.randi_range(-40000, 39999), rng.randi_range(-5000, 4999), rng.randi_range(40000, 119999))
+			b.ai.mode = "hold"
+			b.speed = 0.0
+		else:
+			b = _spawn_ship(faction, Vector3.ZERO, true)
+			b.pos = Vector3(rng.randi_range(-80000, -20001) * (1 if rng.randi_range(0, 1) == 0 else -1), rng.randi_range(-20000, 19999), rng.randi_range(-80000, 79999))
+			b.ai.mode = "freighter"
+			b.speed = 1.0
+		b.basis = Basis.IDENTITY
+		b.ai.role = "freighter"
+		ambient.append(b)
+	var raider_hull := _hull_for(attacker, false)
+	for _i in raiders:
+		var p := _spawn_ship(attacker, camp, false, raider_hull)
+		p.ai.route = AI.patrol_route(false)
+		p.ai.role = "raider"
+		p.ai.spawn = p.pos
+		ambient.append(p)
+	for _i in lurkers:
+		var p := _spawn_ship(8, Vector3.ZERO, false)
+		p.pos = player.pos + Vector3(rng.randi_range(-30000, 29999), rng.randi_range(-30000, 29999), rng.randi_range(-30000, 29999))
+		p.ai.route = AI.patrol_route(false)
+		p.ai.role = "lurker"
+
+## A departing ship waits unseen at the station until it launches.
+func _retire(b: Body) -> void:
+	b.visible = false
+	b.combat_active = false
+	b.ai.mode = "jumped"
+
+## Brings a destroyed or departed ambient ship back as a fresh one.
+func _revive(b: Body, at: Vector3) -> void:
+	b.alive = true
+	b.visible = true
+	b.combat_active = true
+	b.hull = b.hull_max
+	b.armor = b.armor_max
+	b.shield = b.shield_max
+	b.emp = b.emp_max
+	b.disabled = false
+	b.emp_timer = 0
+	b.dead_timer = 0.0
+	b.boosting = false
+	b.speed = 2.0
+	b.pos = at
+	b.basis = Basis.IDENTITY
+	b.cargo = _npc_cargo()
+	b.hostile = b.faction == 8 or b.faction == 9 or _hates_player(b.faction)
+	b.ai.target = null
+	b.ai.leg = 0
+	b.ai.jump_ms = 0
+	b.ai.erase("bank")
+	b.ai.mode = "jumper" if str(b.ai.get("role", "")) == "jumper" else "patrol"
+	if not bodies.has(b): bodies.append(b)
+	event.emit("npc_launched", {"body": b})
+
+func _ambient_step(ms: int) -> void:
+	if story != null or ambient.is_empty() or in_void: return
+	jumper_ms += ms
+	ambient_ms += ms
+	var gone := func(b): return (not b.alive and b.dead_timer <= 0.0) or str(b.ai.get("mode", "")) == "jumped"
+	if jumper_ms > 20000:
+		jumper_ms = 0
+		for b in ambient:
+			if str(b.ai.get("role", "")) == "jumper" and gone.call(b):
+				_revive(b, Vector3(0, 0, 10000))
+				break
+	if ambient_ms > 40000:
+		ambient_ms = 0
+		var fallen: Array = ambient.filter(func(b): return str(b.ai.get("role", "")) == "raider" and gone.call(b))
+		var wave: bool = fallen.size() >= 2 and raid_waves < 2
+		for b in ambient:
+			if str(b.ai.get("role", "")) == "local" and gone.call(b):
+				_revive(b, Vector3(0, 0, 10000))
+		if wave:
+			raid_waves += 1
+			for b in fallen:
+				var at: Vector3 = b.ai.get("spawn", Vector3.ZERO)
+				_revive(b, Vector3(at.x, at.y, player.pos.z + 40000.0))
+				b.basis = Basis(Vector3.UP, PI)
 
 func _rival(faction: int) -> int:
 	match faction:
@@ -334,7 +627,7 @@ func _rival(faction: int) -> int:
 
 ## A ship of a faction near `around`. Its hull and EMP resistance grow with
 ## the player's rank and the story, as the original's formula does.
-func _spawn_ship(faction: int, around: Vector3, freighter: bool) -> Body:
+func _spawn_ship(faction: int, around: Vector3, freighter: bool, hull_index := -1) -> Body:
 	var s = game.session
 	var b := Body.new()
 	b.kind = Body.Kind.FREIGHTER if freighter else Body.Kind.SHIP
@@ -343,7 +636,7 @@ func _spawn_ship(faction: int, around: Vector3, freighter: bool) -> Body:
 	var hull: int = 20 + rank * 15 + int(s.story_step) * 4
 	var emp := 40 + rank * 5
 	var regen := 15000
-	var index := _hull_for(faction, freighter)
+	var index := hull_index if hull_index >= 0 else _hull_for(faction, freighter)
 	if freighter:
 		hull *= 4; emp *= 3; regen *= 3
 		if index == 14: hull *= 5
@@ -354,9 +647,9 @@ func _spawn_ship(faction: int, around: Vector3, freighter: bool) -> Body:
 	b.emp_max = emp
 	b.emp = emp
 	b.emp_regen = regen
-	b.radius = 2000.0
+	b.radius = 4000.0 if freighter else 2000.0
 	b.pos = around + Vector3(rng.randi_range(-20000, 20000), rng.randi_range(-20000, 20000), rng.randi_range(-20000, 20000))
-	b.basis = Basis.from_euler(Vector3(0, rng.randf() * TAU, 0))
+	b.basis = AI.upright(Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1)), Basis.IDENTITY)
 	b.speed = 2.0
 	b.name = cat.faction_name(faction)
 	b.hostile = faction == 8 or faction == 9 or _hates_player(faction)
@@ -364,7 +657,7 @@ func _spawn_ship(faction: int, around: Vector3, freighter: bool) -> Body:
 		var level := int(float(rank) / 1.8) + int(s.story_step / 5.0)
 		b.weapons = [_npc_gun(faction, level + 2)]
 	b.cargo = _npc_cargo()
-	b.ai = {"mode": "patrol", "home": around, "timer": 0, "target": null, "evade": 0}
+	b.ai = {"mode": "patrol", "home": around, "timer": rng.randi_range(0, AI.RETARGET_MS), "target": null}
 	bodies.append(b)
 	return b
 
@@ -382,6 +675,8 @@ func _hull_for(faction: int, freighter: bool) -> int:
 ## The standard NPC gun: four rounds in flight, 3 s lifetime, speed 16,
 ## reload shortening with the story; its look depends on the faction.
 func _npc_gun(faction: int, damage: int) -> Dictionary:
+	# The original disarms every gun to a single point for campaign mission 4.
+	if int(game.session.story_step) == 4: damage = 1
 	var look := 7 if faction == 9 else (1 if faction == 0 else (3 if faction == 1 else 4))
 	var models = lib.constant("an.b:[S")
 	var model := int(models[look]) if models is Array and look < models.size() else -1
@@ -389,26 +684,50 @@ func _npc_gun(faction: int, damage: int) -> Dictionary:
 		"reload": maxi(200, 600 - (game.session.story_step << 1)), "life": 3000, "speed": 16.0, "blast": 0.0,
 		"model": lib.model_name(model) if model >= 0 else "", "cooldown": rng.randi_range(0, 600), "count": 1, "offset": Vector3.ZERO}
 
-## What a ship leaves behind: one or two kinds from the shelves the lounge
-## traders draw from, commodities by the handful.
+## What a ship carries, as the original's loot generator draws it: nothing
+## a third of the time, otherwise one or two kinds. Each pick favours
+## commodities by category chance and the item's own occurrence, skipping
+## blueprint products and priceless goods and, apart from commodities,
+## anything above tech level 7; failing that, raw ore. Commodities come in
+## ones to nines, anything else singly.
+const LOOT_CATEGORY_CHANCE := [5, 20, 2, 5, 100]
+
 func _npc_cargo() -> Array:
-	if rng.randi_range(0, 99) >= 50: return []
-	var id := rng.randi_range(97, 153)
-	if cat.price_mid(id) <= 0: return []
-	return [id, 1 + rng.randi_range(0, 4)]
+	var kinds := rng.randi_range(0, 2)
+	var out: Array = []
+	var n: int = cat.item_count()
+	for _k in kinds:
+		var id := -1
+		var category := 4
+		for _try in 100:
+			var candidate := rng.randi_range(0, n - 1)
+			var c: int = cat.category(candidate)
+			if cat.is_blueprint_product(candidate) or candidate == 175 or candidate == 164: continue
+			if c < 0 or c >= LOOT_CATEGORY_CHANCE.size(): continue
+			if rng.randi_range(0, 99) >= int(LOOT_CATEGORY_CHANCE[c]): continue
+			if rng.randi_range(0, 99) >= cat.attr(candidate, Catalogue.A_OCCURRENCE): continue
+			if cat.price_mid(candidate) <= 0 or (c != 4 and cat.tech(candidate) > 7): continue
+			id = candidate
+			category = c
+			break
+		if id < 0:
+			id = 154 + rng.randi_range(0, 9)
+			category = 4
+		out.append_array([id, 1 + rng.randi_range(0, 8) if category == 4 else 1])
+	return out
 
 func _hates_player(faction: int) -> bool:
 	var rep: Array = game.session.reputation
 	match faction:
 		0: return int(rep[0]) < -60
 		1: return int(rep[0]) > 60
-		2: return int(rep[1]) > 60
-		3: return int(rep[1]) < -60
+		2: return int(rep[1]) < -60
+		3: return int(rep[1]) > 60
 	return false
 
 func _place_player() -> void:
 	match game.arrival_mode:
-		"jump", "travel":
+		"jump", "travel", "wormhole", "void_resume", "drive":
 			var from: Vector3 = arrival.pos if arrival != null else Vector3(0, 0, 40000)
 			player.pos = from
 			player.basis = Body.facing(station.pos - from)
@@ -420,22 +739,79 @@ func _place_player() -> void:
 	if game.session.story_step == 1:
 		player.pos = Vector3(0, 0, -110000)
 
+## ch.java uses a fixed camera ahead of the ship, aimed back at it. Its
+## seven-second shot disables dr's object collisions and user controls,
+## but does not replace durability or stop ordinary forward flight.
+func _begin_portal_arrival() -> void:
+	if wormhole == null: return
+	portal_arrival_ms = 0
+	autopilot = false
+	wormhole.arrive_behind(player.pos - player.forward() * 8192.0)
+	var offset := Vector3(rng.randi_range(500, 999), rng.randi_range(500, 999), 10000)
+	if rng.randi_range(0, 1) == 0: offset.x = -offset.x
+	if rng.randi_range(0, 1) == 0: offset.y = -offset.y
+	var yaw := atan2(player.forward().x, player.forward().z)
+	portal_arrival_camera = player.pos + Basis(Vector3.UP, yaw) * offset
+
+func portal_arriving() -> bool:
+	return portal_arrival_ms >= 0 and portal_arrival_ms <= PORTAL_ARRIVAL_MS
+
+func _step_portal_arrival(ms: int) -> void:
+	if not portal_arriving(): return
+	portal_arrival_ms += ms
+	if portal_arrival_ms > PORTAL_ARRIVAL_MS:
+		event.emit("portal_arrival_finished", {"elapsed": portal_arrival_ms, "from_void": not in_void})
+
 # ------------------------------------------------------------------ stepping
 
 func step(delta: float, input: Dictionary) -> void:
+	if completed_flight: return
 	var ms := int(delta * 1000.0)
 	clock += ms
+	if not radio.is_empty() and clock >= radio_until: radio = {}
+	Wingmen.tick(game.session, ms)
+	# Main/o's drive cinematic disables ordinary gameplay and collisions.
+	# It preserves the actual ship instead of repairing or replaying a world.
+	if using_jump_drive and jumping >= 0:
+		_fly_player(delta, ms, {})
+		return
+	_step_portal_arrival(ms)
+	_step_wormhole(ms)
+	_step_cloak(ms)
 	if story != null:
 		story.step_scene(ms)
+		# The deadline opens a paused mission-loss result synchronously.
+		# Do not move/fire/cross after that loss in the rest of this frame.
+		if story.step == 42 and story.failed: return
 		if story.controls_locked:
 			input = {"yaw": 0.0, "pitch": 0.0}
-	if input.get("autopilot", false): autopilot = not autopilot
+	if portal_arriving(): input = {"yaw": 0.0, "pitch": 0.0}
+	if input.get("autopilot", false):
+		# The original's autopilot key: off when on ("Autopilot Off"); when
+		# off, towards the locked object, else the chosen destination, else
+		# the mission route, else it opens the autopilot list.
+		if autopilot:
+			autopilot = false
+			event.emit("message", {"text": lib.text(292) + " " + lib.text(16)})
+		elif target != null and target.alive:
+			autopilot = true
+			event.emit("message", {"text": lib.text(270) + ": " + (target.name if not target.name.is_empty() else lib.text(292))})
+		elif course_body() != null:
+			autopilot = true
+			event.emit("message", {"text": lib.text(270) + ": " + cat.station_name(int(game.destination.get("station", -1)))})
+		elif mission_waypoint() != null:
+			fly_to_waypoint()
+		else:
+			event.emit("autopilot_list", {})
+	if input.get("cloak", false): toggle_cloak()
+	if turret_mode and (navigation_locked() or not player.alive): turret_mode = false
 	if mining_target != null:
 		_mining_step(delta, ms, input)
 	elif player.alive:
 		_fly_player(delta, ms, input)
+		if completed_flight: return
 		_player_weapons_step(ms, input)
-		_targeting(ms, input)
+		if not portal_arriving(): _targeting(ms, input)
 		_regenerate(ms)
 	for b in bodies:
 		if b == player or not b.alive: continue
@@ -444,9 +820,14 @@ func step(delta: float, input: Dictionary) -> void:
 			AI.step(self, b, delta, ms)
 		elif b.kind == Body.Kind.ASTEROID:
 			b.basis = b.basis.rotated(Vector3.UP, delta * 0.05)
+		elif b.kind == Body.Kind.LOOT and b.alive:
+			_age_crate(b, ms)
+	_ambient_step(ms)
 	_projectiles_step(delta, ms)
+	_tractor_step(ms)
 	_collisions()
 	_cleanup(ms)
+	_regenerate_voids(ms)
 	for e in effects: e.time += delta
 	effects = effects.filter(func(e): return e.time < e.life)
 
@@ -460,6 +841,7 @@ func _fly_player(delta: float, ms: int, input: Dictionary) -> void:
 		if docking > DOCKING_TIME:
 			docking = -1
 			_store_ship_state()
+			completed_flight = true
 			event.emit("docked", {"station": station.station_id})
 		return
 	if jumping >= 0:
@@ -469,8 +851,9 @@ func _fly_player(delta: float, ms: int, input: Dictionary) -> void:
 		if jumping > 2500:
 			jumping = -1
 			_store_ship_state()
-			s.add_stat("jumpgates")
-			event.emit("jumped", jump_destination)
+			if not using_jump_drive: s.add_stat("jumpgates")
+			completed_flight = true
+			event.emit("drive_arrived" if using_jump_drive else "jumped", jump_destination)
 		return
 	if travelling >= 0:
 		travelling += ms
@@ -478,10 +861,17 @@ func _fly_player(delta: float, ms: int, input: Dictionary) -> void:
 		if travelling > TRAVEL_FLASH:
 			travelling = -1
 			_store_ship_state()
+			completed_flight = true
 			event.emit("jumped", {"station": travel_station, "system": s.system_index, "travel": true})
 		return
 	var yaw: float = input.get("yaw", 0.0)
 	var pitch: float = input.get("pitch", 0.0)
+	if turret_mode:
+		# Steering swings the turret; the ship itself flies on, levelling.
+		turret_yaw -= yaw * _turret_speed() / 200.0 * ms / 4096.0 * TAU
+		turret_pitch = clampf(turret_pitch + pitch * ms / 4096.0 * TAU, 0.0, TURRET_PITCH_MAX)
+		yaw = 0.0
+		pitch = 0.0
 	if autopilot:
 		var goal = _autopilot_goal()
 		if goal != null:
@@ -493,6 +883,7 @@ func _fly_player(delta: float, ms: int, input: Dictionary) -> void:
 	# The nose is +z: a right turn swings it towards −x, pulling up towards +y.
 	player.basis = player.basis.rotated(player.basis.y, -yaw * rate * delta)
 	player.basis = player.basis.rotated(player.basis.x, -pitch * rate * delta).orthonormalized()
+	if absf(yaw) < 0.01 and absf(pitch) < 0.01: _align_to_horizon(ms)
 	# Bank for the look of it, levelling out again when not turning.
 	player.ai["bank"] = move_toward(float(player.ai.get("bank", 0.0)), -yaw * 0.5, delta * 1.5)
 	# Boost: the booster's speed for its duration, then its reload time.
@@ -502,6 +893,7 @@ func _fly_player(delta: float, ms: int, input: Dictionary) -> void:
 		boost_time = 0
 		boost_ready = false
 		event.emit("sound", {"name": "fx_boost_01"})
+		event.emit("message", {"text": lib.text(154)})
 	if player.boosting:
 		boost_time += ms
 		if boost_time > int(st.boost_length):
@@ -509,12 +901,102 @@ func _fly_player(delta: float, ms: int, input: Dictionary) -> void:
 			boost_time = -int(st.boost_reload)
 	elif not boost_ready:
 		boost_time += ms
-		if boost_time >= 0: boost_ready = true
+		if boost_time >= 0:
+			boost_ready = true
+			if int(st.boost_length) > 0: event.emit("message", {"text": lib.text(155)})
 	player.speed = boost_speed if player.boosting else PLAYER_SPEED
 	player.pos += player.forward() * player.speed * ms
 	# Bounds: far out, the original pulls the ship back in.
 	if player.pos.length() > 500000.0:
 		player.pos = player.pos.normalized() * 480000.0
+
+func has_turret() -> bool:
+	for w in player.weapons:
+		if w.kind == "turret": return true
+	return false
+
+func set_turret_mode(on: bool) -> bool:
+	if on and (not has_turret() or mining_target != null or navigation_locked()): return false
+	turret_mode = on
+	if on:
+		turret_yaw = 0.0
+		turret_pitch = 0.0
+	return true
+
+## Where the player aims: the turret in turret view, otherwise the nose.
+func aim_direction() -> Vector3:
+	if not turret_mode: return player.forward()
+	var local := Basis(Vector3.UP, turret_yaw) * Basis(Vector3.RIGHT, -turret_pitch) * Vector3(0, 0, 1)
+	return (player.basis * local).normalized()
+
+func _turret_speed() -> float:
+	for w in player.weapons:
+		if w.kind == "turret": return float(maxi(1, cat.attr(int(w.id), Catalogue.A_TURRET_SPEED, 40)))
+	return 40.0
+
+## The original levels the ship's wings whenever it is not being steered:
+## half a 4096th of a turn per millisecond, at most 60 ms per frame.
+func _align_to_horizon(ms: int) -> void:
+	var step := float(mini(ms, 60)) / 2.0 / 4096.0 * TAU
+	var up_y: float = player.basis.y.y
+	var right_y: float = player.basis.x.y
+	if up_y >= 0.0 and absf(right_y) <= 128.0 / 4096.0: return
+	var fwd := aim_direction()
+	var a := player.basis.rotated(fwd, step)
+	var b := player.basis.rotated(fwd, -step)
+	var better_a: bool = absf(a.x.y) < absf(b.x.y) if up_y >= 0.0 else a.y.y > b.y.y
+	player.basis = (a if better_a else b).orthonormalized()
+
+func has_cloak() -> bool:
+	return cloak_duration > 0
+
+func cloak_ready() -> bool:
+	return has_cloak() and cloak <= 0 and cloak_time < 0
+
+## Switches the cloaking device on (when charged) or off early.
+func toggle_cloak() -> bool:
+	if not has_cloak() or not player.alive: return false
+	if cloak > 0:
+		cloak = 0
+		cloak_time = 0
+		event.emit("cloak", {"on": false})
+		return true
+	if cloak_time >= 0 or navigation_locked(): return false
+	cloak = 1
+	cloak_time = 0
+	# Ships hunting the player lose track at once.
+	for b in bodies:
+		if b.is_ship() and b != player and b.ai.get("target") == player: b.ai.target = null
+	event.emit("cloak", {"on": true})
+	event.emit("sound", {"name": "fx_boost_02"})
+	return true
+
+## Fraction of the current cloak or recharge phase that has elapsed.
+func cloak_progress() -> float:
+	if cloak > 0: return float(cloak_time) / float(maxi(1, cloak_duration))
+	if cloak_time >= 0: return float(cloak_time) / float(maxi(1, cloak_reload))
+	return 1.0
+
+func _step_cloak(ms: int) -> void:
+	if not has_cloak(): return
+	if cloak > 0:
+		cloak_coef += ms * 8.0 / 4096.0
+		cloak_time += ms
+		game.session.add_stat("cloaked_ms", ms)
+		if cloak_time > cloak_duration:
+			cloak = 0
+			cloak_time = 0
+			event.emit("cloak", {"on": false})
+	else:
+		cloak_coef = maxf(0.0, cloak_coef - ms * 8.0 / 4096.0)
+		if cloak_time >= 0:
+			cloak_time += ms
+			if cloak_time > cloak_reload: cloak_time = -1
+
+## The ship's sideways scale for the cloaking animation; negative = unseen.
+func cloak_scale() -> float:
+	if cloak_coef <= 0.0: return 1.0
+	return -2.0 * (cloak_coef - 1.0) * (cloak_coef - 1.0) + 3.0
 
 func _regenerate(ms: int) -> void:
 	var st: Dictionary = game.session.ship_stats()
@@ -557,20 +1039,92 @@ func _steer_towards(b: Body, goal: Vector3) -> Vector2:
 	var pitch := clampf(atan2(local.y, local.z) * 2.0, -1.0, 1.0)
 	return Vector2(yaw, pitch)
 
+## The object the chosen destination is reached through: this station, the
+## jump gate towards another system, or another station's star. Null when no
+## destination is chosen.
+func course_body() -> Body:
+	var dest: Dictionary = game.destination
+	if dest.is_empty(): return null
+	var sid := int(dest.get("station", -1))
+	if sid < 0: return null
+	if station != null and sid == station.station_id: return station
+	if cat.system_of_station(sid) != game.session.system_index:
+		if gate != null: return gate
+		# Another system is reached through this system's gate station.
+		sid = int(cat.system(game.session.system_index).get("jumpgate_station", -1))
+		if station != null and sid == station.station_id: return null
+	for b in bodies:
+		if b.kind == Body.Kind.STAR and b.station_id == sid: return b
+	return null
+
+## The next unreached point of the player's mission route, or null.
+func mission_waypoint():
+	return story.wingman_waypoint() if story != null else null
+
+## Autopilot along the mission route (the original's Waypoint entry).
+func fly_to_waypoint() -> bool:
+	if mission_waypoint() == null or navigation_locked(): return false
+	_engage_autopilot()
+	autopilot_waypoint = true
+	event.emit("message", {"text": lib.text(270) + ": " + lib.text(272)})
+	return true
+
+## The original's autopilot list: the programmed destination, the jump
+## gate, this station, the asteroid field and the mission waypoint. Only
+## the entries that exist here are offered.
+func autopilot_choices() -> Array:
+	var out: Array = []
+	if course_body() != null and not game.destination.is_empty():
+		out.append({"key": "destination", "label": lib.text(270) + ": " + cat.station_name(int(game.destination.get("station", -1)))})
+	if gate != null: out.append({"key": "gate", "label": lib.text(271)})
+	if station != null: out.append({"key": "station", "label": station.name + " " + lib.text(40)})
+	if not in_void: out.append({"key": "field", "label": lib.text(273)})
+	if mission_waypoint() != null: out.append({"key": "waypoint", "label": lib.text(294)})
+	return out
+
+func autopilot_to(key: String) -> bool:
+	if navigation_locked(): return false
+	match key:
+		"destination":
+			if course_body() == null: return false
+			_engage_autopilot()
+			target = null
+			event.emit("message", {"text": lib.text(270) + ": " + cat.station_name(int(game.destination.get("station", -1)))})
+		"gate", "station":
+			var body: Body = gate if key == "gate" else station
+			if body == null: return false
+			_engage_autopilot()
+			target = body
+			locked = true
+			event.emit("message", {"text": lib.text(270) + ": " + (lib.text(271) if key == "gate" else station.name + " " + lib.text(40))})
+		"field":
+			_engage_autopilot()
+			autopilot_field = true
+			event.emit("message", {"text": lib.text(270) + ": " + lib.text(273)})
+		"waypoint":
+			return fly_to_waypoint()
+		_:
+			return false
+	return true
+
+func _engage_autopilot() -> void:
+	autopilot = true
+	autopilot_waypoint = false
+	autopilot_field = false
+
 func _autopilot_goal():
+	if autopilot_waypoint:
+		return mission_waypoint()
+	if autopilot_field:
+		return field_centre
 	if target != null and target.alive:
 		if target.kind == Body.Kind.STAR:
 			return player.pos + _star_direction(target) * 100000.0
 		return target.pos
-	var dest: Dictionary = game.destination
-	if not dest.is_empty():
-		var sid := int(dest.get("station", -1))
-		if sid == station.station_id: return station.pos
-		if cat.system_of_station(sid) != game.session.system_index and gate != null: return gate.pos
-		for b in bodies:
-			if b.kind == Body.Kind.STAR and b.station_id == sid:
-				return player.pos + _star_direction(b) * 100000.0
-	return null
+	var way := course_body()
+	if way == null: return null
+	if way.kind == Body.Kind.STAR: return player.pos + _star_direction(way) * 100000.0
+	return way.pos
 
 ## Direction of another station's star, matching the backdrop's ring.
 func _star_direction(b: Body) -> Vector3:
@@ -594,17 +1148,64 @@ func _player_weapons_step(ms: int, input: Dictionary) -> void:
 	var shooting := fire or (auto and locked and target != null and target.is_ship() and target.hostile)
 	if shooting:
 		for w in player.weapons:
-			if w.kind == "gun" and int(w.cooldown) == 0:
-				_fire(player, w)
+			# Ab.java fires only the turret from the turret view.
+			if int(w.cooldown) != 0: continue
+			if turret_mode and w.kind == "turret": _fire(player, w, aim_direction())
+			elif not turret_mode and w.kind == "gun": _fire(player, w)
 	if special:
+		# The chosen launcher fires only itself, as in the original; with no
+		# loaded choice, the first ready loaded launcher in slot order.
+		var choice: int = game.secondary_choice
+		var chosen_loaded := secondary_launchers().any(func(o): return int(o.id) == choice and int(o.count) > 0)
 		for w in player.weapons:
-			if w.kind != "gun" and w.kind != "turret" and int(w.cooldown) == 0 and int(w.count) > 0:
-				_fire(player, w)
-				w.count = int(w.count) - 1
-				break
-	for w in player.weapons:
-		if w.kind == "turret" and int(w.cooldown) == 0 and target != null and target.is_ship() and target.hostile and target.pos.distance_to(player.pos) < float(w.life) * float(w.speed):
-			_fire(player, w, (target.pos - player.pos).normalized())
+			# Supplied ak.java: an active area bomb ignites before checking
+			# this launcher's remaining stack or reload. Secondary is a
+			# press edge from Controls; holding a key must not ignite it.
+			if w.kind in ["emp", "nuke"] and _ignite_player_bomb(w): continue
+			if w.kind == "gun" or w.kind == "turret" or int(w.cooldown) != 0 or int(w.count) <= 0: continue
+			if chosen_loaded and int(w.id) != choice: continue
+			_fire(player, w)
+			w.count = int(w.count) - 1
+			# An emptied choice is dropped, as the original drops it.
+			if chosen_loaded and not secondary_launchers().any(func(o): return int(o.id) == choice and int(o.count) > 0):
+				game.secondary_choice = -1
+			break
+
+## The fitted secondary launchers (rockets, torpedoes, bombs).
+func secondary_launchers() -> Array:
+	return player.weapons.filter(func(w): return w.kind != "gun" and w.kind != "turret")
+
+## The launcher the secondary button fires: the chosen weapon while it has
+## rounds. The original fires nothing until one is chosen in the quick menu;
+## here the first loaded launcher stands in, so the button is never dead.
+func current_secondary() -> Dictionary:
+	var first := {}
+	for w in secondary_launchers():
+		if int(w.count) <= 0: continue
+		if int(w.id) == game.secondary_choice: return w
+		if first.is_empty(): first = w
+	return first
+
+func choose_secondary(item_id: int) -> void:
+	game.secondary_choice = item_id
+
+## Retire the actual launcher's projectile before applying the ordinary blast.
+## It remains controllable after the last round cleared the saved fitting slot.
+## Reference identity avoids igniting a different, identically equipped ship.
+func _ignite_player_bomb(w: Dictionary) -> bool:
+	var active: Array = []
+	var remaining: Array = []
+	for p in projectiles:
+		if p.owner == player and is_same(p.weapon, w) and int(p.life) >= 0:
+			active.append(p)
+		else:
+			remaining.append(p)
+	# Array.erase uses value equality for dictionaries; equal-looking rounds
+	# from another launcher must retain their own identity and lifecycle.
+	projectiles = remaining
+	for p in active:
+		_blast(p)
+	return not active.is_empty()
 
 func _fire(owner: Body, w: Dictionary, direction := Vector3.ZERO) -> void:
 	w.cooldown = int(w.reload)
@@ -615,7 +1216,17 @@ func _fire(owner: Body, w: Dictionary, direction := Vector3.ZERO) -> void:
 	projectiles.append(p)
 	if owner == player:
 		shots_fired += 1
-		event.emit("sound", {"name": "wpn_rocket_02" if w.kind == "missile" else "fx_menu_04", "volume": 0.35 if w.kind == "gun" else 0.8})
+		if w.kind == "emp" or w.kind == "nuke": game.session.add_stat("bombs_used")
+		event.emit("sound", {"name": launch_sound(w), "volume": 0.35 if w.kind == "gun" else 0.8})
+
+## The original's launch sounds: rockets, torpedoes, and one for EMP bombs
+## and nukes alike. It plays nothing for guns; the engine gives them a
+## quiet click so a shot isn't silent.
+func launch_sound(w: Dictionary) -> String:
+	match w.kind:
+		"missile": return "wpn_rocket_03" if int(w.type) == Catalogue.Type.TORPEDO else "wpn_rocket_02"
+		"emp", "nuke": return "wpn_rocket_04"
+	return "fx_menu_04"
 
 func npc_fire(b: Body, w: Dictionary) -> void:
 	_fire(b, w)
@@ -632,13 +1243,25 @@ func _projectiles_step(delta: float, ms: int) -> void:
 		var hit: Body = _sweep(p, step_vec)
 		p.pos += step_vec
 		if hit != null:
+			# Report resolved missiles separately from the launch sound. A
+			# homing target is not necessarily the first body along its path.
+			var before := _missile_body_state(hit) if w.kind == "missile" else {}
 			_impact(p, hit)
+			if w.kind == "missile":
+				event.emit("missile_impact", {"projectile": p, "body": hit,
+					"before": before, "after": _missile_body_state(hit)})
 			continue
 		if int(p.life) <= 0:
 			if w.kind == "emp" or w.kind == "nuke": _blast(p)
+			if w.kind == "missile": event.emit("missile_expired", {"projectile": p})
 			continue
 		keep.append(p)
 	projectiles = keep
+
+func _missile_body_state(body: Body) -> Dictionary:
+	return {"hull": body.hull, "armor": body.armor, "shield": body.shield,
+		"emp": body.emp, "emp_max": body.emp_max, "disabled": body.disabled,
+		"alive": body.alive}
 
 ## The first body the projectile's path passes within that body's box.
 func _sweep(p: Dictionary, step_vec: Vector3) -> Body:
@@ -647,12 +1270,21 @@ func _sweep(p: Dictionary, step_vec: Vector3) -> Body:
 	var best_t := 2.0
 	for b in bodies:
 		if b == owner or not b.alive or not b.solid: continue
+		if not b.visible and not b.combat_active: continue
 		if b.kind == Body.Kind.STAR or b.kind == Body.Kind.ARRIVAL: continue
 		if b.kind == Body.Kind.STATION:
 			if _inside_station(p.pos + step_vec): return b
 			continue
-		# Friendly fire between NPCs of one side is ignored.
-		if owner != player and b != player and b.faction == owner.faction: continue
+		if b.kind == Body.Kind.MOTHERSHIP:
+			if _inside_mothership(p.pos + step_vec): return b
+			continue
+		# Ordinary NPC friendly fire stays ignored, but cb.java explicitly
+		# permits commanding a non-fixed-friendly ship of the pilot's race.
+		# Honour the target captured when this wingman shot was fired; a
+		# later order cannot erase in-flight hits or redirect them to allies.
+		if owner != player and b != player and b.faction == owner.faction:
+			if not (bool(owner.ai.get("wingman", false)) and p.get("target") == b
+				and Wingmen.valid_target(self, b)): continue
 		var rel: Vector3 = b.pos - p.pos
 		var t := clampf(rel.dot(step_vec) / maxf(1.0, step_vec.length_squared()), 0.0, 1.0)
 		var closest: Vector3 = p.pos + step_vec * t
@@ -668,7 +1300,7 @@ func _impact(p: Dictionary, hit: Body) -> void:
 		_blast(p)
 		return
 	effects.append({"kind": "spark", "pos": p.pos, "time": 0.0, "life": 0.3})
-	if hit.kind == Body.Kind.STATION or hit.kind == Body.Kind.GATE: return
+	if hit.kind in [Body.Kind.STATION, Body.Kind.GATE, Body.Kind.MOTHERSHIP]: return
 	_harm(hit, float(w.damage), float(w.emp), p.owner)
 
 ## EMP bombs and nukes: everything within the blast radius takes a share
@@ -677,7 +1309,8 @@ func _blast(p: Dictionary) -> void:
 	var w: Dictionary = p.weapon
 	var radius: float = maxf(1.0, float(w.blast))
 	effects.append({"kind": "blast", "pos": p.pos, "time": 0.0, "life": 1.2, "radius": radius, "emp": w.kind == "emp"})
-	event.emit("sound", {"name": "wpn_nuke_02"})
+	# A nuke goes off with the thunder, an EMP bomb with its own crackle.
+	event.emit("sound", {"name": "fx_thunder_01" if w.kind == "nuke" else "wpn_nuke_02"})
 	for b in bodies:
 		if not b.alive or not (b.is_ship() or b.kind == Body.Kind.ASTEROID): continue
 		var d: float = b.pos.distance_to(p.pos)
@@ -689,27 +1322,115 @@ func _blast(p: Dictionary) -> void:
 			_harm(b, float(w.damage) * f * (0.6 if b == player else 1.0), float(w.emp) * f, p.owner)
 
 func _harm(b: Body, damage: float, emp_damage: float, source: Body) -> void:
+	if not b.combat_active: return
+	if b == player and (using_jump_drive and jumping >= 0 or bool(player.ai.get("portal_cinematic", false)) or bool(player.ai.get("probe_cinematic", false))): return
+	# Some story allies explicitly reject the player's weapons. A scripted
+	# shield must also prevent retaliation and reputation penalties.
+	if source == player and bool(b.ai.get("player_protected", false)): return
 	var was_alive := b.alive
 	if b.kind == Body.Kind.ASTEROID:
 		b.hull -= int(ceil(damage))
-		if b.hull <= 0: _break_asteroid(b)
+		if b.hull <= 0:
+			_break_asteroid(b)
+			if source == player: game.session.add_stat("asteroids_destroyed")
 		return
+	var was_disabled := b.disabled
+	if source == player and b.is_ship() and b != player: _provoke(b, damage, emp_damage)
 	b.damage(damage, emp_damage)
-	if source == player and b.is_ship() and b != player:
-		b.hostile = true
-		b.ai.target = player
-		if b.faction >= 0 and b.faction <= 3:
-			game.reputation_hit(b.faction, not b.alive)
+	if source == player and b.is_ship() and b != player and not bool(b.ai.get("fixed_friendly", false)):
+		# An enemy you hit turns to you.
+		if b.hostile: b.ai.target = player
+		if b.disabled and not was_disabled:
+			# Draining a ship's energy is a wrong against its race; the
+			# system's own ships all come for you.
+			if _is_local(b): _alarm(b.faction, false)
+			if b.faction >= 0 and b.faction <= 3: game.standing_delict(b.faction, 2)
+		# Player.damageHP: space junk is no one's kill (not asteroids either).
+		if not b.alive and was_alive and not b.is_junk(): game.standing_kill(b.faction, local_race())
 	if b == player:
 		event.emit("hit", {"from": source.pos if source != null else player.pos})
 	if was_alive and not b.alive:
 		_destroyed(b, source)
 
+## The race whose system this is: 9 in the void.
+func local_race() -> int:
+	if in_void: return 9
+	return int(cat.system(game.session.system_index).faction)
+
+## A ship of the system's own race, not already set against you by a job
+## or a story, whose patience the original measures.
+func _is_local(b: Body) -> bool:
+	var race := local_race()
+	if race < 0 or race > 3 or b.faction != race: return false
+	return not b.hostile or bool(b.ai.get("provoked", false))
+
+## The original's friendly-fire rules: a local ship takes a third of its
+## hull (or energy) from you before it fights back and warns you over the
+## radio; two thirds and the whole race in the system turns on you. Other
+## races' ships shrug it off; a kill still costs standing.
+func _provoke(b: Body, damage: float, emp_damage: float) -> void:
+	if bool(b.ai.get("fixed_friendly", false)) or not _is_local(b): return
+	b.ai["hurt"] = float(b.ai.get("hurt", 0.0)) + damage
+	b.ai["emp_hurt"] = float(b.ai.get("emp_hurt", 0.0)) + (emp_damage if b.emp > 0 else 0.0)
+	var hurt: float = b.ai.hurt
+	if hurt > floorf(b.hull_max / 3.0) or (b.emp_max > 0 and float(b.ai.emp_hurt) > floorf(b.emp_max / 3.0)):
+		b.ai["provoked"] = true
+		b.hostile = true
+		b.ai.target = player
+		if not friendly_fire_alerted:
+			friendly_fire_alerted = true
+			_radio_call(b.faction, 247)
+	if hurt > b.hull_max - floorf(b.hull_max / 3.0): _alarm(b.faction, true)
+
+## Every ship of the race turns on you; the first time with a call for help.
+func _alarm(race: int, call: bool) -> void:
+	for s in bodies:
+		if s.is_ship() and s != player and s.alive and s.faction == race and not bool(s.ai.get("fixed_friendly", false)):
+			s.ai["provoked"] = true
+			s.hostile = true
+			s.ai.target = player
+	if call and not locals_alarmed:
+		locals_alarmed = true
+		_radio_call(race, 250)
+
+## One of three lines from `first` over the radio, with a face of the race,
+## unless a job is under way (the original keeps the channel for it).
+func _radio_call(race: int, first: int) -> void:
+	if not game.session.job.is_empty() or not RACE_SPEAKERS.has(race): return
+	if story != null and not story.message().is_empty(): return
+	var speaker: int = RACE_SPEAKERS[race]
+	var face := preload("res://src/presentation/portrait.gd").random_face(lib, rng.randi_range(0, 3) != 0, race, rng)
+	radio = {"speaker": speaker, "name": lib.text(Catalogue.STRING_SPEAKERS + speaker),
+		"text": lib.text(first + rng.randi_range(0, 2)), "face": face}
+	radio_until = clock + 6000
+	event.emit("sound", {"name": "fx_message_02", "volume": 0.7})
+
 func _destroyed(b: Body, source: Body) -> void:
+	Wingmen.died(self, b)
+	if b.kind == Body.Kind.SHIP and b.faction == 9 and _recurring_wormhole() and not fallen_voids.has(b):
+		fallen_voids.append(b)
 	effects.append({"kind": "explosion", "pos": b.pos, "time": 0.0, "life": 1.6, "scale": 1.0 if b.kind != Body.Kind.FREIGHTER else 2.5})
 	event.emit("sound", {"name": "fx_explosion_01"})
 	if b == player:
 		event.emit("destroyed", {})
+		return
+	# A stray projectile can destroy a floating container after its carrier
+	# dies. That is not another ship kill and cannot drop the same box again.
+	# Keep the destruction visual/event, but not ship accounting or salvage.
+	if not b.is_ship():
+		b.dead_timer = 1.0
+		event.emit("killed", {"body": b})
+		return
+	# dp.java has a separate junk-death path: no pilot/pirate/contest kill,
+	# and a ten-percent chance of a physical 1..10-unit scrap container.
+	# The tractor, not destruction, credits that cargo.
+	if b.is_junk():
+		stats["junk_destroyed"] = int(stats.get("junk_destroyed", 0)) + 1
+		game.session.add_stat("junk_destroyed")
+		if rng.randi_range(0, 99) < 10:
+			_drop(b.pos, 99, rng.randi_range(1, 10), "box")
+		b.dead_timer = 1.0
+		event.emit("killed", {"body": b})
 		return
 	if source == player:
 		kills += 1
@@ -717,8 +1438,13 @@ func _destroyed(b: Body, source: Body) -> void:
 		if b.faction == 8: game.session.add_stat("pirates")
 	elif source != null and bool(source.ai.get("rival", false)):
 		stats["rival_kills"] = int(stats.get("rival_kills", 0)) + 1
+	# Original hostile Void fighter deaths replace ordinary trade cargo with
+	# 1..3 alien remains (cb.java). The player must still salvage the drop.
+	if b.kind == Body.Kind.SHIP and b.faction == 9 and b.hostile:
+		b.cargo = [131, rng.randi_range(1, 3)]
 	if not b.cargo.is_empty() and not bool(b.ai.get("no_drop", false)):
-		_drop(b.pos, int(b.cargo[0]), int(b.cargo[1]), "box")
+		_drop_list(b.pos, b.cargo, "box")
+		bodies.back().ai["race"] = b.faction
 	b.dead_timer = 1.0
 	event.emit("killed", {"body": b})
 
@@ -733,6 +1459,13 @@ func _break_asteroid(a: Body) -> void:
 			_drop(a.pos, a.ore + 11, 1, "asteroid")
 		elif a.ore_class < 7 and rng.randi_range(0, 99) < 20:
 			_drop(a.pos, a.ore, 1 + rng.randi_range(0, 2), "asteroid")
+
+## One container holding every kind the ship carried.
+func _drop_list(at: Vector3, pairs: Array, look: String) -> void:
+	if pairs.size() < 2: return
+	_drop(at, int(pairs[0]), int(pairs[1]), look)
+	var box: Body = bodies.back()
+	box.cargo = pairs.duplicate()
 
 func _drop(at: Vector3, item: int, count: int, look: String) -> void:
 	var l := Body.new()
@@ -750,12 +1483,33 @@ func _drop(at: Vector3, item: int, count: int, look: String) -> void:
 # ------------------------------------------------------------------ collisions
 
 func _collisions() -> void:
-	if not player.alive or docking >= 0: return
+	if not player.alive or docking >= 0 or (using_jump_drive and jumping >= 0) or portal_crossed or portal_arriving(): return
+	if wormhole != null and wormhole.usable() and mining_target == null and jumping < 0 and travelling < 0:
+		if player.pos.distance_to(wormhole.pos) < Wormhole.CROSS_RADIUS:
+			# Main/o.java: abandoning the active scan through a portal is
+			# fatal. The completed result advances to 30 before escape is safe.
+			if story != null and story.portal_escape_forbidden():
+				player.hull = 0
+				player.alive = false
+				var failure_event := "probe_escape_failed" if story.step == 29 else "escort_escape_failed"
+				event.emit(failure_event, {"clock": story.clock, "step": story.step})
+				_destroyed(player, null)
+				return
+			portal_crossed = true
+			_store_ship_state()
+			event.emit("wormhole_crossed", {"from_void": in_void, "distance": player.pos.distance_to(wormhole.pos), "step": game.session.story_step})
+			return
 	# Station: bounce off its modules; flying in with the station targeted docks.
+	if _inside_mothership(player.pos):
+		var away := (player.pos - mothership.pos).normalized()
+		if away.is_zero_approx(): away = -player.forward()
+		player.basis = Body.facing(away, player.basis.y)
+		player.pos += away * 800.0
 	if _inside_station(player.pos, -3500.0):
-		if target == station and not in_void:
+		if target == station and not in_void and not mission_holds_here():
 			_begin_docking()
 		else:
+			if target == station and mission_holds_here(): _say_held()
 			var away := (player.pos - station.pos).normalized()
 			player.basis = Body.facing(away, player.basis.y)
 			player.pos += away * 800.0
@@ -768,48 +1522,154 @@ func _collisions() -> void:
 				if d.length() < r:
 					# Ramming an asteroid breaks it; a large one hurts.
 					_break_asteroid(b)
+					game.session.add_stat("asteroids_destroyed")
 					if b.size > 30: _harm(player, 40.0, 0.0, null)
-			Body.Kind.LOOT:
-				if player.pos.distance_to(b.pos) < PLAYER_RADIUS + LOOT_RADIUS + _tractor_reach():
-					_collect(b)
 			Body.Kind.GATE:
 				if player.pos.distance_to(b.pos) < GATE_ZONE and target == b:
 					_use_gate()
-			Body.Kind.SHIP, Body.Kind.FREIGHTER:
-				# A ship disabled by EMP can be looted until it recovers.
-				if b.disabled and not b.cargo.is_empty() and player.pos.distance_to(b.pos) < 3000.0 + _tractor_reach():
-					_loot(b)
+	# Crates and disabled ships are handled by the tractor, not contact pickup.
+
+func _tractor_step(ms: int) -> void:
+	tractor.step(self, ms)
+
+func tractor_status() -> Dictionary:
+	return tractor.status()
 
 func _tractor_reach() -> float:
 	return 6000.0 if game.session.has_equipped_type(Catalogue.Type.TRACTOR_BEAM) else 0.0
 
 func _collect(l: Body) -> void:
-	var item: int = l.cargo[0]
-	var count: int = l.cargo[1]
-	var free: int = game.session.cargo_free()
-	if free <= 0:
+	if not l.alive or l.cargo.size() < 2: return
+	var remaining: Array = []
+	var took := false
+	for i in range(0, l.cargo.size() - 1, 2):
+		var item: int = l.cargo[i]
+		var count: int = l.cargo[i + 1]
+		if count <= 0: continue
+		var free: int = game.session.cargo_free()
+		if free <= 0:
+			remaining.append_array([item, count])
+			continue
+		var taken := mini(count, free)
+		game.session.add_cargo(item, taken)
+		game.session.add_stat("cargo_salvaged", taken)
+		_salvage_record(item, taken)
+		# x.java counts accepted units, not kills, boxes or failed full-hold
+		# attempts. Preserve any remainder rather than silently discarding it.
+		stats["collected"] = int(stats.get("collected", 0)) + taken
+		took = true
+		if count > taken: remaining.append_array([item, count - taken])
+		event.emit("message", {"text": lib.format(261, {"#Q": str(taken), "#N": cat.item_name(item)})})
+	l.cargo = remaining
+	l.alive = not remaining.is_empty()
+	if took: event.emit("sound", {"name": "fx_message_03"})
+	elif not remaining.is_empty(): event.emit("message", {"text": lib.text(159)})
+
+## A wreck crate drifts for 45 seconds, then blows up (the original's crate
+## life); ore chunks from asteroids stay.
+const CRATE_LIFE_MS := 45000
+
+func _age_crate(l: Body, ms: int) -> void:
+	if l.model != "box": return
+	l.ai["age_ms"] = int(l.ai.get("age_ms", 0)) + ms
+	if int(l.ai.age_ms) > CRATE_LIFE_MS:
+		l.alive = false
+		l.dead_timer = 1.0
+		effects.append({"kind": "explosion", "pos": l.pos, "time": 0.0, "life": 1.0, "scale": 0.4})
+		event.emit("sound", {"name": "fx_explosion_03"})
+
+## A crate the tractor has pulled in, as KIPlayer.captureCrate takes it: a
+## random share (at least one unit, never the whole stack unless it is one)
+## of the first cargo it holds. The crate is used up either way; with no
+## room in the hold that share is lost.
+func _capture_crate(l: Body) -> void:
+	if not l.alive: return
+	l.alive = false
+	var item := -1
+	var taken := 0
+	for i in range(0, l.cargo.size() - 1, 2):
+		var count := int(l.cargo[i + 1])
+		if count <= 0: continue
+		item = int(l.cargo[i])
+		taken = maxi(1, rng.randi_range(0, count - 1))
+		break
+	l.cargo = []
+	if item < 0: return
+	var race := int(l.ai.get("race", -1))
+	if race >= 0 and race <= 3: game.standing_delict(race, 2)
+	if game.session.cargo_free() < taken:
 		event.emit("message", {"text": lib.text(159)})
 		return
-	count = mini(count, free)
-	game.session.add_cargo(item, count)
-	game.session.add_stat("cargo_salvaged", count)
-	l.alive = false
-	event.emit("message", {"text": lib.format(261, {"#Q": str(count), "#N": cat.item_name(item)})})
+	game.session.add_cargo(item, taken)
+	game.session.add_stat("cargo_salvaged", taken)
+	_salvage_record(item, taken)
+	stats["collected"] = int(stats.get("collected", 0)) + taken
+	event.emit("message", {"text": lib.format(261, {"#Q": str(taken), "#N": cat.item_name(item)})})
 	event.emit("sound", {"name": "fx_message_03"})
 
+## Medal records for salvaged goods: Void remains and kinds of drink.
+func _salvage_record(item: int, count: int) -> void:
+	if item == 131: game.session.add_stat("alien_junk", count)
+	elif item >= 132 and item <= 153: Medals.mark(game.session, "drink_types", item - 132)
+
 func _loot(b: Body) -> void:
+	if b.cargo.size() < 2 or int(b.cargo[1]) <= 0: return
+	if not tractor.authorizes(self, b): return
+	var recovery := bool(b.ai.get("recovery_container", false))
+	if recovery:
+		# A complete physical pull authorizes settlement. Scanner selection
+		# alone cannot transfer it, and a canceled/replaced job cannot claim it.
+		if story == null or story.job.is_empty() or story.job != game.session.job or story.cast.back() != b: return
+		if int(b.cargo[0]) != game.session.recovery_cargo_item() or bool(story.job.get("recovered", false)): return
+	if not recovery and b.cargo.size() > 2:
+		# A carrier's whole manifest comes aboard in one pull, as far as the
+		# hold allows; what does not fit stays with the carrier.
+		var shell := Body.new()
+		shell.cargo = b.cargo.duplicate()
+		_collect(shell)
+		b.cargo = shell.cargo
+		if b.faction >= 0 and b.faction <= 3: game.standing_delict(b.faction, 2)
+		return
 	var item: int = b.cargo[0]
 	var count: int = mini(int(b.cargo[1]), game.session.cargo_free())
 	if count <= 0:
+		# KIPlayer.captureCrate loses an entrusted recovery container when
+		# its transfer finds no room. Do not silently turn that failure into
+		# a later successful pickup. Ordinary salvage remains independent.
+		if recovery:
+			b.cargo = []
+			b.ai["recovery_lost"] = true
 		event.emit("message", {"text": lib.text(159)})
 		return
 	game.session.add_cargo(item, count)
 	game.session.add_stat("cargo_salvaged", count)
+	_salvage_record(item, count)
 	stats["collected"] = int(stats.get("collected", 0)) + count
-	b.cargo = []
-	if b.faction >= 0 and b.faction <= 3: game.reputation_hit(b.faction, false)
-	event.emit("message", {"text": lib.format(261, {"#Q": str(count), "#N": cat.item_name(item)})})
+	if recovery: b.ai["recovery_transferred"] = true
+	b.cargo[1] = int(b.cargo[1]) - count
+	if int(b.cargo[1]) <= 0: b.cargo = []
+	if b.faction >= 0 and b.faction <= 3: game.standing_delict(b.faction, 2)
+	# The source mission toast uses the briefing ID even though captureCrate
+	# transfers the carrier's opposite ID. Scanner/hold remain physical data.
+	var message_item := int(story.job.item) if recovery else item
+	event.emit("message", {"text": lib.format(261, {"#Q": str(count), "#N": cat.item_name(message_item)})})
 	event.emit("sound", {"name": "fx_message_03"})
+
+## A freelance fight under way here keeps the pilot in the area: the
+## original refuses docking, gates and flights to other planets until the
+## mission is won or lost ("Not possible while on a mission"). Deliveries
+## and passengers are exempt, and a recovered container is on its way home.
+func mission_holds_here() -> bool:
+	if story == null or story.job.is_empty() or story.complete or story.failed: return false
+	if bool(story.job.get("recovered", false)) or bool(story.job.get("done", false)): return false
+	return not int(story.job.get("kind", -1)) in [0, 11]
+
+var _held_said_ms := -100000
+
+func _say_held() -> void:
+	if clock - _held_said_ms < 3000: return
+	_held_said_ms = clock
+	event.emit("message", {"text": lib.text(254)})
 
 func _begin_docking() -> void:
 	if docking >= 0: return
@@ -819,23 +1679,50 @@ func _begin_docking() -> void:
 	event.emit("docking", {})
 
 func _use_gate() -> void:
-	if jumping >= 0: return
+	if navigation_locked() or gate == null or target != gate or player.pos.distance_to(gate.pos) >= GATE_ZONE: return
+	if mission_holds_here():
+		_say_held()
+		return
 	var dest: Dictionary = game.destination
 	var sid := int(dest.get("station", -1))
-	if sid < 0 or cat.system_of_station(sid) == game.session.system_index:
+	if not Navigation.gate_destination(game.session, cat, sid):
 		event.emit("gate_menu", {})
 		return
+	using_jump_drive = false
 	jump_destination = {"station": sid, "system": cat.system_of_station(sid)}
 	jumping = 0
 	autopilot = false
-	event.emit("sound", {"name": "fx_thunder_01"})
+	# The original's jump sound, the same for a gate and the drive.
+	event.emit("sound", {"name": "fx_boost_02"})
 	event.emit("gate", {})
 
-func jump_to(station_id: int) -> void:
+func navigation_locked() -> bool:
+	return (completed_flight or player == null or not player.alive or docking >= 0 or jumping >= 0
+		or travelling >= 0 or mining_target != null or portal_crossed or portal_arriving()
+		or (story != null and story.controls_locked))
+
+func drive_error() -> String:
+	if navigation_locked(): return "The jump drive is unavailable during this action."
+	if not game.session.has_equipped_type(Catalogue.Type.JUMP_DRIVE): return "Fit the jump drive in the hangar first."
+	if not Navigation.drive_allowed(game.session): return "The jump drive cannot be used during this mission."
+	return ""
+
+## Called only after the player's selection/confirmation. No fuel or credit
+## debit exists in the supplied J2ME drive path; do not invent one here.
+func jump_to(station_id: int) -> bool:
+	if not drive_error().is_empty(): return false
+	var destination := Navigation.drive_destination(game.session, cat, station_id)
+	if destination.is_empty(): return false
 	game.destination = {"station": station_id}
-	jump_destination = {"station": station_id, "system": cat.system_of_station(station_id)}
+	jump_destination = destination
+	using_jump_drive = true
+	drive_origin = player.pos
+	drive_basis = player.basis
 	jumping = 0
-	event.emit("gate", {})
+	autopilot = false
+	event.emit("sound", {"name": "fx_boost_02"})
+	event.emit("drive", destination.duplicate())
+	return true
 
 ## Acting on a locked target that is not a ship.
 func _act_on_target() -> void:
@@ -845,7 +1732,12 @@ func _act_on_target() -> void:
 			event.emit("message", {"text": lib.text(276)})
 		Body.Kind.GATE:
 			autopilot = true
+		Body.Kind.WORMHOLE:
+			if target.visible: autopilot = true
 		Body.Kind.STAR:
+			if mission_holds_here():
+				_say_held()
+				return
 			travel_station = target.station_id
 			travelling = 0
 			game.destination = {"station": travel_station}
@@ -890,6 +1782,8 @@ func _mining_step(delta: float, ms: int, input: Dictionary) -> void:
 		var laser: Dictionary = game.session.equipped_of_type(Catalogue.Type.MINING_LASER)
 		mining = Mining.new(a.ore_class, a.ore, int(laser.id), cat)
 		event.emit("sound", {"name": "fx_mining_05"})
+		event.emit("mining_started", {"ore": a.ore, "class": a.ore_class, "drill": int(laser.id),
+			"locked": locked and target == a, "distance": player.pos.distance_to(a.pos)})
 		return
 	var yaw: float = input.get("yaw", 0.0)
 	if mining.step(ms, yaw < -0.3, yaw > 0.3): return
@@ -898,16 +1792,23 @@ func _mining_step(delta: float, ms: int, input: Dictionary) -> void:
 func _finish_mining() -> void:
 	var a: Body = mining_target
 	var s = game.session
+	var result := {"ore": a.ore, "class": a.ore_class, "yield": int(mining.tons),
+		"success": mining.success, "accepted_ore": 0, "accepted_core": 0,
+		"free_before": s.cargo_free()}
 	var amount: int = mini(s.cargo_free(), int(mining.tons))
 	if mining.core_found() and s.cargo_free() > 0:
 		var core: int = a.ore - 154 + 165
 		s.add_cargo(core, 1)
 		s.add_stat("cores_mined")
+		Medals.mark(s, "core_types", core - Medals.CORE_FIRST)
+		result.accepted_core = 1
 		event.emit("message", {"text": lib.format(261, {"#Q": "1", "#N": cat.item_name(core)})})
 		amount = mini(amount, s.cargo_free())
 	if amount > 0:
 		s.add_cargo(a.ore, amount)
 		s.add_stat("ore_mined", amount)
+		Medals.mark(s, "ore_types", a.ore - Medals.ORE_FIRST)
+		result.accepted_ore = amount
 		event.emit("message", {"text": lib.format(262, {"#Q": str(amount), "#N": cat.item_name(a.ore)})})
 	else:
 		event.emit("message", {"text": lib.text(263)})
@@ -917,14 +1818,48 @@ func _finish_mining() -> void:
 	_break_asteroid(a)
 	mining_target = null
 	mining = null
+	result.free_after = s.cargo_free()
+	event.emit("mining_finished", result)
 
 # ------------------------------------------------------------------ targeting
+
+## The cargo scanner's actual, detached HUD readout. A target pointer alone
+## must not reveal unseen inventories; the supplied SHOW_CARGO attribute and
+## completed native lock are required. This query never transfers cargo.
+func scanned_cargo() -> Dictionary:
+	if target == null or not locked or not target.alive or not target.visible or not target.is_ship(): return {}
+	if target == player or not bodies.has(target): return {}
+	var scanner: Dictionary = game.session.equipped_of_type(Catalogue.Type.SCANNER)
+	if scanner.is_empty() or cat.attr(int(scanner.id), Catalogue.A_SCAN_CARGO) != 1: return {}
+	if target.cargo.size() < 2 or int(target.cargo[1]) <= 0: return {"item": -1, "count": 0}
+	return {"item": int(target.cargo[0]), "count": int(target.cargo[1]), "pairs": target.cargo.duplicate()}
 
 ## The original locks whatever sits under the crosshair for long enough; the
 ## scanner sets how long.
 func _targeting(ms: int, input: Dictionary) -> void:
+	if not autopilot:
+		autopilot_waypoint = false
+		autopilot_field = false
+	elif autopilot_field:
+		# The field is reached once among its rocks.
+		if player.pos.distance_to(field_centre) < FIELD_ARRIVAL:
+			autopilot = false
+			autopilot_field = false
+	elif autopilot_waypoint:
+		# The route flies on point by point and ends at the last one.
+		if mission_waypoint() == null:
+			autopilot = false
+			autopilot_waypoint = false
+	elif (target == null or not target.alive) and course_body() == null:
+		# Nothing locked and no destination chosen: nowhere to fly.
+		autopilot = false
 	if input.get("next_target", false):
 		_cycle_target()
+		return
+	# Flying towards a locked destination must not turn into flying towards
+	# an asteroid that crosses the reticle. An explicit target change above
+	# still works; switching autopilot off restores ordinary crosshair aiming.
+	if autopilot and target != null and target.alive and locked: return
 	var aim := _aimed_body()
 	if aim != null and aim != target:
 		target = aim
@@ -944,6 +1879,7 @@ func _aimed_body() -> Body:
 	var best_dot := 0.985
 	var fwd := player.forward()
 	for b in bodies:
+		if not b.visible and b.kind != Body.Kind.STAR: continue
 		if not b.alive or b == player or b.kind == Body.Kind.ARRIVAL or b.kind == Body.Kind.LOOT: continue
 		var dir: Vector3
 		if b.kind == Body.Kind.STAR: dir = _star_direction(b)
@@ -959,6 +1895,7 @@ func _aimed_body() -> Body:
 func _cycle_target() -> void:
 	var candidates: Array = []
 	for b in bodies:
+		if not b.visible and b.kind != Body.Kind.STAR: continue
 		if b.alive and b != player and b.kind != Body.Kind.ARRIVAL and b.kind != Body.Kind.LOOT and b.kind != Body.Kind.ASTEROID:
 			candidates.append(b)
 	if candidates.is_empty(): return
@@ -979,7 +1916,64 @@ func _cleanup(ms: int) -> void:
 		if not b.alive and b != player: continue
 		keep.append(b)
 	bodies = keep
-	if target != null and not bodies.has(target): target = null
+	if target != null and not bodies.has(target):
+		target = null
+		locked = false
+		autopilot = false
 
 func hostiles() -> Array:
-	return bodies.filter(func(b): return b.alive and b.is_ship() and b != player and b.hostile)
+	return bodies.filter(func(b): return b.alive and b.visible and b.is_ship() and b != player and b.hostile)
+
+# ------------------------------------------------------------------ wormholes
+
+func _step_wormhole(ms: int) -> void:
+	if wormhole == null or portal_crossed: return
+	if wormhole.tick(ms, _recurring_wormhole(), game.session.story_step, player.pos, rng):
+		if target == wormhole:
+			autopilot = false
+			target = null
+			locked = false
+		event.emit("wormhole_relocated", {"position": wormhole.pos, "visible": wormhole.visible})
+	# dr.b(false) disables its object-collision loop, which also owns portal
+	# attraction. The close animation continues while the ship coasts away.
+	if portal_arriving() or not wormhole.usable() or mining_target != null or docking >= 0 or jumping >= 0 or travelling >= 0: return
+	var gap := wormhole.pos - player.pos
+	var distance := gap.length()
+	if distance > 0.0 and distance < Wormhole.PULL_RADIUS:
+		# The phone applies a pull each 30 Hz frame. Preserve that rate at
+		# the native fixed physics frequency rather than doubling it at 60 Hz.
+		var pull := (Wormhole.PULL_RADIUS - distance) / 256.0 * ms * 30.0 / 1000.0
+		player.pos += gap.normalized() * minf(pull, distance)
+
+func _regenerate_voids(ms: int) -> void:
+	if not _recurring_wormhole(): return
+	void_regeneration_ms += ms
+	if void_regeneration_ms <= 40000: return
+	void_regeneration_ms = 0
+	# This is the world's periodic sweep, not a per-enemy death timer.
+	# Retaining only fallen actors keeps removed explosion bodies eligible.
+	for b in fallen_voids:
+		if b.alive or b.faction != 9 or b.dead_timer > 0.0: continue
+		b.alive = true
+		b.visible = true
+		b.hull = b.hull_max
+		b.armor = b.armor_max
+		b.shield = b.shield_max
+		b.emp = b.emp_max
+		b.disabled = false
+		b.emp_timer = 0
+		b.dead_timer = 0.0
+		b.cargo = []
+		b.combat_active = true
+		b.ai.target = null
+		b.ai.mode = "patrol"
+		if in_void:
+			# Preserve the source's unusual conditional Z expression rather
+			# than silently treating it as an offset about the player.
+			var z := 30000.0 if int(player.pos.z) + rng.randi_range(0, 1) == 0 else -30000.0
+			b.pos = Vector3(player.pos.x + rng.randi_range(-30000, 29999), player.pos.y + rng.randi_range(-30000, 29999), z)
+		elif wormhole != null:
+			b.pos = wormhole.pos + Vector3(rng.randi_range(-10000, 9999), rng.randi_range(-10000, 9999), rng.randi_range(-10000, 9999))
+		if not bodies.has(b): bodies.append(b)
+		event.emit("void_regenerated", {"body": b, "clock": clock})
+	fallen_voids = fallen_voids.filter(func(b): return not b.alive)

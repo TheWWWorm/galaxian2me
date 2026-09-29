@@ -42,6 +42,8 @@ func _ready() -> void:
 
 func _fill() -> void:
 	if not is_inside_tree(): return
+	# Focus in the detail pane is kept by _detail; in the lists, here.
+	var keep := Common.focus_index(self) if Common.focus_index(detail) < 0 else -1
 	for c in shelf_list.get_children(): c.queue_free()
 	for c in hold_list.get_children(): c.queue_free()
 	var cat = app.catalogue
@@ -58,6 +60,7 @@ func _fill() -> void:
 	var cap: int = int(game.session.ship_stats().cargo_capacity)
 	hold_list.add_child(UI.label("%s: %d / %d t" % [app.library.text(61), used, cap], 14, UI.TEXT_DIM))
 	_detail()
+	Common.refocus(self, keep)
 
 func _select(id: int, side: int) -> void:
 	selected = id
@@ -66,17 +69,23 @@ func _select(id: int, side: int) -> void:
 	_detail()
 
 func _detail() -> void:
+	var keep := Common.focus_index(detail)
 	for c in detail.get_children(): c.queue_free()
+	Common.refocus(detail, keep)
 	if selected < 0:
-		detail.add_child(UI.paragraph(app.library.text(309), 14, UI.TEXT_DIM))
+		# The original's help here names phone keys; this says what to do here.
+		detail.add_child(UI.paragraph("Pick an item on the station's shelf to buy it, or one in your cargo hold to sell it.\n\nEquipment you buy goes into the hold; fit it to your ship on the Ship tab.", 14, UI.TEXT_DIM))
 		return
 	var cat = app.catalogue
 	var id := selected
 	detail.add_child(Common.item_icon(app.library, id))
 	detail.add_child(UI.label(cat.item_name(id), 18))
 	detail.add_child(UI.label("%s · %s %d" % [cat.type_name(cat.type(id)), app.library.text(37), cat.tech(id)], 14, UI.TEXT_DIM))
-	for f in Common.item_facts(app.library, cat, id):
-		detail.add_child(UI.label("%s: %s" % [f[0], f[1]], 14))
+	# Set against what is fitted in its place, the way the dealer sets hulls.
+	var fitted := Common.fitted_counterpart(game.session, cat, id) if selected_side == 0 else -1
+	if fitted >= 0:
+		detail.add_child(UI.label("Compared with your %s" % cat.item_name(fitted), 13, UI.TEXT_DIM))
+	for r in Common.fact_rows(app.library, cat, id, fitted): detail.add_child(r)
 	var price: int = game.price_here(id)
 	detail.add_child(UI.label("%s: %s" % [app.library.text(36), UI.money(price)], 16, UI.TEXT_GOOD))
 	var available: int = _available()
@@ -92,6 +101,7 @@ func _detail() -> void:
 	row.add_child(UI.button("+", func(): amount = mini(available, amount + 1); _detail()))
 	row.add_child(UI.button("Max", func(): amount = available; _detail()))
 	var action := UI.button(("Buy" if selected_side == 0 else app.library.text(137)) + "  (" + UI.money(price * amount) + ")", _trade)
+	action.disabled = selected_side == 1 and not game.can_sell_cargo(id)
 	detail.add_child(action)
 
 func _available() -> int:
@@ -106,9 +116,18 @@ func _available() -> int:
 
 func _trade() -> void:
 	var message: String
-	if selected_side == 0: message = game.buy(selected, amount)
+	if selected_side == 0:
+		message = game.buy(selected, amount)
+		# The first equipment bought: the original's note that it must be mounted.
+		if message.is_empty() and app.catalogue.category(selected) != app.catalogue.Category.COMMODITY:
+			station._tip("mounting")
 	else:
 		message = game.sell(selected, amount)
 		if message.is_empty(): station.notify(app.library.format(86, {"#N": app.catalogue.item_name(selected)}))
 	station.notify(message)
-	if selected_side == 1 and game.session.cargo_count(selected) <= 0: selected = -1
+	if selected_side == 1 and game.session.cargo_count(selected) <= 0:
+		# Sold out: the highlight goes back to the hold's first row.
+		var had_focus := Common.focus_index(detail) >= 0
+		selected = -1
+		_detail()
+		if had_focus: Common.refocus(hold_list, 0)

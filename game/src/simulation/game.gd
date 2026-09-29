@@ -8,6 +8,8 @@ const Session := preload("res://src/simulation/session.gd")
 const Market := preload("res://src/simulation/market.gd")
 const Campaign := preload("res://src/simulation/campaign.gd")
 const Lounge := preload("res://src/simulation/lounge.gd")
+const Blueprints := preload("res://src/simulation/blueprints.gd")
+const Medals := preload("res://src/simulation/medals.gd")
 
 ## New-game constants of the original: first station, the hull Keith flies
 ## and what is mounted on it.
@@ -18,11 +20,19 @@ const START_PRIMARY := [3, 3]
 const START_EQUIPMENT := [54, 59, 82]
 
 signal changed
+## Emitted only after arrival, story rewards and freelance settlement finish.
+## Persistence belongs to the app, so simulations and tests never write saves.
+signal docked(station_id: int)
 
 ## Lines to show when the station screen opens (debriefings, arrivals).
 var pending_dialogue: Array = []
+## Medals awarded at the last docking, waiting to be announced: [index, tier].
+var new_medals: Array = []
 ## Where the next flight is headed: {"station": id} or {}.
 var destination := {}
+## The secondary weapon (item id) chosen in flight, -1 for none. Like the
+## original's, it lasts for the session and is not saved.
+var secondary_choice := -1
 
 var library
 var cat: Catalogue
@@ -30,6 +40,7 @@ var session: Session
 var market: Market
 var campaign: Campaign
 var bar: Lounge
+var workshop: Blueprints
 
 func _init(lib, catalogue: Catalogue) -> void:
 	library = lib
@@ -39,11 +50,14 @@ func _init(lib, catalogue: Catalogue) -> void:
 	market = Market.new(cat)
 	campaign = Campaign.new(self)
 	bar = Lounge.new(self)
+	workshop = Blueprints.new(session, cat)
 
 func new_game() -> void:
 	var s := session
 	s.credits = 0
 	s.story_step = 0
+	# The first medal is the pilot's service record, held from the start.
+	s.medals = {"0": 1}
 	s.ship = {"index": START_SHIP, "faction": START_FACTION, "hull": 0}
 	s.equipment = [[], [], [], []]
 	s.fit_slots()
@@ -62,6 +76,10 @@ func new_game() -> void:
 
 ## Brings a loaded session into a consistent docked state.
 func resume() -> void:
+	if session.in_void:
+		# Loading an in-flight checkpoint is not another physical crossing.
+		arrival_mode = "void_resume"
+		return
 	arrive(session.station_id, false)
 
 # ------------------------------------------------------------------ docking
@@ -75,6 +93,8 @@ func system() -> Dictionary:
 ## Docks at a station: marks it visited and restocks its shelf unless it is
 ## one of the last three stations visited, whose shelves persist.
 func arrive(station_id: int, fresh := true) -> void:
+	if station_id < 0 or cat.station(station_id).is_empty(): return
+	session.in_void = false
 	session.station_id = station_id
 	session.system_index = cat.system_of_station(station_id)
 	session.visited_stations[str(station_id)] = true
@@ -116,14 +136,22 @@ func buy(id: int, count := 1) -> String:
 	session.credits -= p * count
 	entry.count = int(entry.count) - count
 	session.add_cargo(id, count)
+	if id >= Medals.DRINK_FIRST and id <= Medals.DRINK_LAST: session.add_stat("booze_bought", count)
 	changed.emit()
 	return ""
+
+func can_sell_cargo(id: int) -> bool:
+	# Original mission freight and cargo explicitly marked unsaleable by the
+	# campaign are not trade goods. Keep the UI and transaction guard shared.
+	if id == Lounge.COURIER_FREIGHT and int(session.job.get("kind", -1)) == 0: return false
+	if bool(session.job.get("recovered", false)) and id == session.recovery_cargo_item(): return false
+	var protected = session.flags.get("unsaleable_cargo", {})
+	return not (protected is Dictionary and bool(protected.get(str(id), false)))
 
 func sell(id: int, count := 1) -> String:
 	count = mini(count, session.cargo_count(id))
 	if count <= 0: return library.text(160)
-	# Freight carried for a client is not the player's to sell.
-	if id == Lounge.COURIER_FREIGHT and int(session.job.get("kind", -1)) == 0: return library.text(160)
+	if not can_sell_cargo(id): return library.text(160)
 	var p := price_here(id)
 	session.credits += p * count
 	session.add_cargo(id, -count)
@@ -144,6 +172,29 @@ func _shelf_entry(id: int) -> Dictionary:
 static func _money(v: int) -> String:
 	return preload("res://src/presentation/ui.gd").money(v)
 
+# ------------------------------------------------------------------ production
+
+func blueprint_offer(product: int, ingredient: int, count: int) -> Dictionary:
+	if cat.item(ingredient).is_empty(): return {"error": library.text(257)}
+	return workshop.offer(product, ingredient, count, price_here(ingredient), not can_sell_cargo(ingredient))
+
+func contribute_blueprint(order: Dictionary) -> String:
+	for key in ["product", "ingredient", "count"]:
+		if not session._whole(order.get(key), 1 if key == "count" else 0): return library.text(257)
+	var current := blueprint_offer(int(order.product), int(order.ingredient), int(order.count))
+	if not str(current.error).is_empty(): return str(current.error)
+	if current != order: return "The production order changed. Review it before confirming."
+	workshop.contribute(current)
+	changed.emit()
+	return ""
+
+func _collect_products(station_id: int) -> void:
+	var received := workshop.collect_at(station_id)
+	if received.is_empty(): return
+	var text: String = library.text(92)
+	for item in received: text += "\n%dx %s" % [int(item.count), cat.item_name(int(item.product))]
+	pending_dialogue.append({"speaker": -1, "text": text})
+
 # ------------------------------------------------------------------ fitting
 
 ## Mounts one unit of an item from the hold into a slot of its category.
@@ -160,15 +211,20 @@ func mount(id: int, slot: int) -> String:
 			if i != slot and slots[i] != null and cat.type(int(slots[i].id)) == t:
 				return library.text(164)
 	var current = slots[slot]
+	if _occupied_cabin(current): return library.text(160)
+	var previous_stats := session.ship_stats()
 	var amount := 1
 	if cat.stackable(id) and c == Catalogue.Category.SECONDARY: amount = session.cargo_count(id)
-	if current != null and int(current.id) == id and cat.stackable(id):
+	# Only secondary ammunition shares one slot as a quantity. The original
+	# permits multiple compressors/cabins, but each occupies its own slot;
+	# replacing one returns the old unit to cargo rather than hiding a stack.
+	if current != null and int(current.id) == id and c == Catalogue.Category.SECONDARY and cat.stackable(id):
 		current.count = int(current.count) + amount
 	else:
 		if current != null: session.add_cargo(int(current.id), int(current.count))
 		slots[slot] = {"id": id, "count": amount}
 	session.add_cargo(id, -amount)
-	_clamp_hull()
+	_refit_defenses(previous_stats)
 	changed.emit()
 	return ""
 
@@ -176,10 +232,12 @@ func demount(category: int, slot: int) -> String:
 	var slots: Array = session.equipment[category]
 	if slot < 0 or slot >= slots.size() or slots[slot] == null: return ""
 	var e: Dictionary = slots[slot]
+	if _occupied_cabin(e): return library.text(160)
 	if session.cargo_free() < int(e.count): return library.text(84)
+	var previous_stats := session.ship_stats()
 	session.add_cargo(int(e.id), int(e.count))
 	slots[slot] = null
-	_clamp_hull()
+	_refit_defenses(previous_stats)
 	changed.emit()
 	return ""
 
@@ -187,21 +245,61 @@ func sell_mounted(category: int, slot: int) -> String:
 	var slots: Array = session.equipment[category]
 	if slot < 0 or slot >= slots.size() or slots[slot] == null: return ""
 	var e: Dictionary = slots[slot]
+	if _occupied_cabin(e): return library.text(160)
+	var previous_stats := session.ship_stats()
 	session.credits += price_here(int(e.id)) * int(e.count)
 	slots[slot] = null
-	_clamp_hull()
+	_refit_defenses(previous_stats)
 	changed.emit()
 	return ""
+
+## The supplied HangarList protects every fitted cabin while passengers are
+## aboard, even with spare capacity. Check before any fitting/credit mutation;
+## replacing a slot must not provide an alternative route around that rule.
+func _occupied_cabin(entry) -> bool:
+	return entry != null and cat.type(int(entry.id)) == Catalogue.Type.CABIN \
+		and int(session.flags.get("passengers", 0)) > 0
 
 func _clamp_hull() -> void:
 	session.ship.hull = mini(int(session.ship.hull), int(session.ship_stats().max_hull))
 
+## The saved hull figure includes remaining armor, not its maximum capacity.
+## Changing armor must preserve base-hull damage and initialize the new plate;
+## fitting an unrelated weapon must not refill either damaged layer.
+func _refit_defenses(previous: Dictionary) -> void:
+	var next := session.ship_stats()
+	if int(previous.armor_plate) != int(next.armor_plate):
+		var remaining := clampi(int(session.ship.get("armor", previous.armor_plate)), 0, int(previous.armor_plate))
+		var base_hull := clampi(int(session.ship.hull) - remaining, 1, int(next.armor))
+		session.ship.armor = int(next.armor_plate)
+		session.ship.hull = base_hull + int(next.armor_plate)
+	_clamp_hull()
+
 func repair_cost() -> int:
 	return 0
+
+## The supplied game's station departure creates fresh hull, armor and
+## shields from the equipped catalogue values. Settle that free servicing
+## at docking, before autosave; loading a save alone is not a repair action.
+func _service_docked_ship() -> void:
+	var stats := session.ship_stats()
+	session.ship.hull = int(stats.max_hull)
+	session.ship.armor = int(stats.armor_plate)
+	session.ship.shield = int(stats.shield)
 
 # ------------------------------------------------------------------ ships
 
 func buy_ship(offer: Dictionary) -> String:
+	# A stale dealer control must not buy an absent hull or reuse an old price.
+	# The transaction always resolves an offer from this station's real shelf.
+	var live: Dictionary = {}
+	for candidate in dealer():
+		if candidate == offer:
+			live = candidate
+			break
+	if live.is_empty() or cat.ship(int(live.get("index", -1))).is_empty(): return library.text(257)
+	if int(session.flags.get("passengers", 0)) > 0: return library.text(161)
+	offer = live
 	var value := ship_value()
 	if session.credits + value < int(offer.price):
 		return library.format(83, {"#C": _money(int(offer.price) - session.credits - value)})
@@ -223,7 +321,7 @@ func buy_ship(offer: Dictionary) -> String:
 
 ## What the dealer credits for the current hull.
 func ship_value() -> int:
-	return market.ship_trade_in(int(session.ship.index))
+	return market.ship_trade_in(int(session.ship.index), bool(session.flags.get("all_medals", false)))
 
 # ------------------------------------------------------------------ lounge & jobs
 
@@ -242,6 +340,9 @@ func cancel_job() -> void:
 	# Abandoning a job returns nothing and takes back its freight.
 	if int(session.job.get("kind", -1)) == 0:
 		session.add_cargo(Lounge.COURIER_FREIGHT, -int(session.job.get("count", 0)))
+	if bool(session.job.get("recovered", false)):
+		# Only the one entrusted container belongs to this recovery.
+		session.add_cargo(session.recovery_cargo_item(), -1)
 	session.flags.erase("passengers")
 	session.job = {}
 	changed.emit()
@@ -254,6 +355,11 @@ func settle_job(station_id: int) -> void:
 	var kind := int(job.kind)
 	var paid := false
 	match kind:
+		3, 5:
+			var payload := session.recovery_cargo_item()
+			if bool(job.get("recovered", false)) and int(job.get("return_station", -1)) == station_id and session.cargo_count(payload) >= 1:
+				session.add_cargo(payload, -1)
+				paid = true
 		0:
 			session.add_cargo(Lounge.COURIER_FREIGHT, -int(job.count))
 			session.add_stat("goods_conveyed", int(job.count))
@@ -281,6 +387,22 @@ func settle_job(station_id: int) -> void:
 ## after a gate, "travel" after crossing the system.
 var arrival_mode := ""
 
+## Main/p.java requires fitting the supplied EMP bombs before leaving the
+## equipment station, including after the objective advances to the flight.
+func departure_error() -> String:
+	# Swapping hulls or removing compression may temporarily overfill a docked
+	# hold. Keep every item, but require fitting/trading before any departure.
+	if session.cargo_free() < 0: return library.text(84)
+	if int(session.job.get("kind", -1)) in [3, 5] and cat.station(int(session.job.get("return_station", -1))).is_empty():
+		return "This older recovery contract has no recorded return station. Abandon it and accept a new offer."
+	if session.station_id != int(session.story_mission.get("station", -1)): return ""
+	if session.story_step == 20: return library.text(260)
+	if session.story_step == 21:
+		for item in session.equipped_items():
+			if int(item.id) == 41 and int(item.get("count", 0)) > 0: return ""
+		return library.text(260)
+	return ""
+
 func depart(target: Dictionary) -> void:
 	destination = target
 	arrival_mode = ""
@@ -288,47 +410,85 @@ func depart(target: Dictionary) -> void:
 
 ## Docked after flight: the station's shelves and story checks run here.
 func dock(station_id: int) -> void:
+	if session.in_void or station_id < 0 or cat.station(station_id).is_empty(): return
 	if int(destination.get("station", -1)) == station_id: destination = {}
+	# Main/o checks the record on the approach, before the dock's repair.
+	var hull_max: int = maxi(1, int(session.ship_stats().armor))
+	var hull_now: int = int(session.ship.hull) - int(session.ship.get("armor", 0))
+	var found := Medals.check(session, cat, library, clampi(hull_now * 100 / hull_max, 0, 100))
 	arrive(station_id)
-	campaign.on_dock(station_id)
 	settle_job(station_id)
-	autosave()
+	_collect_products(station_id)
+	# A delivery may satisfy the current story's jobs-so-far requirement.
+	# Both reward and campaign advancement belong to the same docking save.
+	campaign.on_dock(station_id)
+	new_medals = Medals.award(session, library, found)
+	_service_docked_ship()
+	docked.emit(station_id)
 
 ## Arrived at another station's space by gate or in-system travel.
 func jump_arrive(system_index: int, station_id: int) -> void:
+	if session.in_void or station_id < 0: return
 	session.station_id = station_id
 	session.system_index = system_index
 	session.visited_systems[str(system_index)] = true
+	_remember_trip(system_index)
 	arrival_mode = "jump"
 
-## Standing: harming a faction's ships costs standing with it and gains
-## standing with its rival on the same axis.
-func reputation_hit(faction: int, killed: bool) -> void:
-	var amount := 5 if killed else 1
+## The chart's trail of recent trips: the last six systems reached.
+const RECENT_TRIPS := 6
+func _remember_trip(system_index: int) -> void:
+	var trail: Array = session.flags.get("recent_systems", [])
+	if not trail.is_empty() and int(trail.back()) == system_index: return
+	trail.append(system_index)
+	while trail.size() > RECENT_TRIPS: trail.pop_front()
+	session.flags["recent_systems"] = trail
+
+## Main/o: a drive stream-out is not a gate use or station visit. In Void
+## space the saved normal address remains the only permitted return orbit.
+func drive_arrive(destination: Dictionary) -> bool:
+	var navigation = preload("res://src/simulation/navigation.gd")
+	var address: Dictionary = navigation.drive_destination(session, cat, int(destination.get("station", -2)))
+	if address.is_empty() or address != destination: return false
+	if bool(address.void):
+		session.in_void = true
+	else:
+		session.in_void = false
+		session.station_id = int(address.station)
+		session.system_index = int(address.system)
+		session.visited_systems[str(session.system_index)] = true
+		_remember_trip(session.system_index)
+	self.destination = {}
+	arrival_mode = "drive"
+	return true
+
+## Called only by a physical portal crossing. The retained address is not a
+## docking event: no shelf roll, repair, freelance reward or gate statistic.
+func cross_wormhole() -> void:
+	session.in_void = not session.in_void
+	destination = {}
+	arrival_mode = "wormhole"
+
+## Standing: wronging a race (disabling or robbing one of its ships costs
+## 2, a kill 5) costs standing with it and gains standing with its rival on
+## the same axis.
+func standing_delict(race: int, amount: int) -> void:
 	var rep: Array = session.reputation
-	match faction:
+	match race:
 		0: rep[0] = clampi(int(rep[0]) - amount, -100, 100)
 		1: rep[0] = clampi(int(rep[0]) + amount, -100, 100)
-		2: rep[1] = clampi(int(rep[1]) + amount, -100, 100)
-		3: rep[1] = clampi(int(rep[1]) - amount, -100, 100)
+		2: rep[1] = clampi(int(rep[1]) - amount, -100, 100)
+		3: rep[1] = clampi(int(rep[1]) + amount, -100, 100)
 
-## Destroyed in flight: the last autosave is restored when there is one.
-func defeat() -> void:
-	var path := autosave_path()
-	if FileAccess.file_exists(path):
-		var d = JSON.parse_string(FileAccess.get_file_as_string(path))
-		if d is Dictionary and session.from_dict(d).is_empty():
-			arrive(session.station_id, false)
-			return
-	new_game()
-
-func autosave_path() -> String:
-	return "user://saves/%s/autosave.json" % library.id
-
-func autosave() -> void:
-	DirAccess.make_dir_recursive_absolute("user://saves/" + library.id)
-	var f := FileAccess.open(autosave_path(), FileAccess.WRITE)
-	if f == null: return
-	var d := session.to_dict()
-	d.saved_at = Time.get_datetime_string_from_system()
-	f.store_string(JSON.stringify(d))
+## A kill costs 5 with the victim's race. A pirate kill instead earns a
+## little distrust from the rival of the system's race (1): whoever runs the
+## system is glad, their neighbours across the axis are not.
+func standing_kill(race: int, local_race: int) -> void:
+	if race == 8:
+		match local_race:
+			0: standing_delict(1, 1)
+			1: standing_delict(0, 1)
+			2: standing_delict(3, 1)
+			3: standing_delict(2, 1)
+		return
+	standing_delict(race, 5)

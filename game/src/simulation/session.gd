@@ -13,6 +13,9 @@ var story_step := 0
 var playtime_ms := 0
 var station_id := 0
 var system_index := 0
+## Void space has no catalogue station. Retain the real station/system as
+## the return address; never insert the sentinel -1 into markets or visits.
+var in_void := false
 ## Hull index, the livery it was bought in, and its armour right now.
 var ship := {"index": 0, "faction": 0, "hull": 0}
 ## One array per category (primary, secondary, turret, equipment); each slot
@@ -24,7 +27,9 @@ var visited_stations := {}
 var visited_systems := {}
 ## Systems whose gates the story has opened for travel.
 var unlocked_systems := {}
-## Standing on two axes: Terran (+) / Vossk (−) and Midorian (+) / Nivelian (−).
+## Standing on the original's two axes, each −100..100: a positive first
+## axis favours the Terrans over the Vossk, a positive second axis the
+## Nivelians over the Midorians (above 60 the other race turns hostile).
 var reputation := [30, 0]
 var stats := {}
 var medals := {}
@@ -39,6 +44,13 @@ var cat
 
 func _init(catalogue = null) -> void:
 	cat = catalogue
+
+## Actual entrusted cargo, separate from the offer's presentation identity.
+## Pre-metadata saves already used the offered ID; preserve that contract
+## without rewriting its cargo, changing its pending return, or adding goods.
+func recovery_cargo_item() -> int:
+	if not int(job.get("kind", -1)) in [3, 5]: return -1
+	return int(job.get("recovery_item", job.get("item", -1)))
 
 # ------------------------------------------------------------------ ship
 
@@ -152,28 +164,38 @@ func remember_market(m: Dictionary) -> void:
 
 func to_dict() -> Dictionary:
 	return {"format": SAVE_FORMAT, "content": content_id, "credits": credits, "story_step": story_step,
-		"playtime_ms": playtime_ms, "station": station_id, "system": system_index, "ship": ship,
+		"playtime_ms": playtime_ms, "station": station_id, "system": system_index, "in_void": in_void, "ship": ship,
 		"equipment": equipment, "cargo": cargo, "visited_stations": visited_stations,
 		"visited_systems": visited_systems, "unlocked_systems": unlocked_systems, "reputation": reputation,
-		"stats": stats, "medals": medals, "story_mission": story_mission, "job": job, "markets": markets,
+		"reputation_axes": 2, "stats": stats, "medals": medals, "story_mission": story_mission, "job": job, "markets": markets,
 		"blueprints": blueprints, "flags": flags}
+
+func location_id() -> int:
+	return -1 if in_void else station_id
 
 ## Loads a saved dictionary; returns an error message or "".
 func from_dict(d: Dictionary) -> String:
-	if int(d.get("format", 0)) != SAVE_FORMAT: return "This save was written by an incompatible version."
-	if str(d.get("content", "")) != content_id: return "This save belongs to a different game file."
+	var error := _validate_save(d)
+	if not error.is_empty(): return error
+	# Validate the entire snapshot before changing any field. Own the loaded
+	# containers as well, so a caller cannot mutate a session through its input.
+	d = d.duplicate(true)
 	credits = int(d.credits)
 	story_step = int(d.story_step)
 	playtime_ms = int(d.playtime_ms)
 	station_id = int(d.station)
 	system_index = int(d.system)
+	in_void = bool(d.get("in_void", false))
 	ship = d.ship
 	equipment = d.equipment
 	cargo = d.cargo
 	visited_stations = d.visited_stations
 	visited_systems = d.visited_systems
 	unlocked_systems = d.get("unlocked_systems", {})
-	reputation = d.reputation
+	reputation = d.reputation.duplicate()
+	# Saves written before the second axis took the original's sign had it
+	# the other way round (Midorians favoured by +).
+	if int(d.get("reputation_axes", 1)) < 2: reputation[1] = -int(reputation[1])
 	stats = d.stats
 	medals = d.medals
 	story_mission = d.story_mission
@@ -181,7 +203,132 @@ func from_dict(d: Dictionary) -> String:
 	markets = d.markets
 	blueprints = d.get("blueprints", {})
 	flags = d.get("flags", {})
-	if cat.station(station_id).is_empty() or cat.ship(int(ship.index)).is_empty():
-		return "The save refers to content this game file does not have."
 	fit_slots()
+	return ""
+
+## JSON represents numbers as floats. Accept integral finite values, but
+## never silently truncate fractions, parse strings or coerce booleans.
+static func _whole(value, minimum := 0, maximum := 9007199254740991) -> bool:
+	if not (value is int or value is float): return false
+	return is_finite(float(value)) and value >= minimum and value <= maximum and float(value) == floor(float(value))
+
+static func _numeric_key(key) -> bool:
+	return key is String and key.is_valid_int() and str(int(key)) == key and int(key) >= 0
+
+func _item_stack(entry, category := -1) -> bool:
+	if not entry is Dictionary: return false
+	if not _whole(entry.get("id")) or not _whole(entry.get("count"), 0): return false
+	var id := int(entry.id)
+	return not cat.item(id).is_empty() and (category < 0 or cat.category(id) == category)
+
+const BlueprintRules := preload("res://src/simulation/blueprints.gd")
+
+func _validate_save(d: Dictionary) -> String:
+	if not _whole(d.get("format")) or int(d.format) != SAVE_FORMAT:
+		return "This save was written by an incompatible version."
+	if not d.get("content") is String or d.content != content_id:
+		return "This save belongs to a different game file."
+	var invalid := "The save is incomplete or contains invalid state."
+	if d.has("in_void") and not d.in_void is bool: return invalid
+	for key in ["credits", "story_step", "playtime_ms", "station", "system"]:
+		if not _whole(d.get(key)): return invalid
+	for key in ["ship", "cargo", "visited_stations", "visited_systems", "stats", "medals", "story_mission", "job"]:
+		if not d.get(key) is Dictionary: return invalid
+	for key in ["unlocked_systems", "blueprints", "flags"]:
+		if d.has(key) and not d[key] is Dictionary: return invalid
+	var saved_flags: Dictionary = d.get("flags", {})
+	if saved_flags.has("wingmen"):
+		if not saved_flags.wingmen is Array or saved_flags.wingmen.size() > 3: return invalid
+		for pilot in saved_flags.wingmen:
+			if not pilot is String or pilot.is_empty(): return invalid
+	if saved_flags.has("wingmen_race") and not _whole(saved_flags.wingmen_race, 0, 9): return invalid
+	if saved_flags.has("wingmen_remaining_ms") and not _whole(saved_flags.wingmen_remaining_ms, 0, 600000): return invalid
+	if saved_flags.has("wingmen_face"):
+		if not saved_flags.wingmen_face is Array: return invalid
+		for part in saved_flags.wingmen_face:
+			if not _whole(part, 0, 255): return invalid
+	if saved_flags.has("final_escort_hull") and not _whole(saved_flags.final_escort_hull, 1): return invalid
+	if int(d.story_step) == 41 and bool(d.get("in_void", false)) and not saved_flags.has("final_escort_hull"): return invalid
+	for key in ["wormhole_station", "wormhole_system"]:
+		if saved_flags.has(key) and not _whole(saved_flags[key], -1): return invalid
+	if saved_flags.has("recent_systems"):
+		if not saved_flags.recent_systems is Array or saved_flags.recent_systems.size() > 6: return invalid
+		for sys in saved_flags.recent_systems:
+			if not _whole(sys, 0, (cat.system_count() - 1) if cat != null else 1000): return invalid
+	if saved_flags.has("unsaleable_cargo"):
+		if not saved_flags.unsaleable_cargo is Dictionary: return invalid
+		for key in saved_flags.unsaleable_cargo:
+			if not _numeric_key(key) or cat == null or cat.item(int(key)).is_empty() or not saved_flags.unsaleable_cargo[key] is bool: return invalid
+	for key in ["equipment", "reputation", "markets"]:
+		if not d.get(key) is Array: return invalid
+	for key in ["index", "faction", "hull"]:
+		if not _whole(d.ship.get(key)): return invalid
+	if d.ship.has("armor") and not _whole(d.ship.armor): return invalid
+	if d.ship.has("shield"):
+		var shield_value = d.ship.shield
+		if not (shield_value is int or shield_value is float): return invalid
+		if not is_finite(float(shield_value)) or shield_value < 0: return invalid
+	if cat == null or cat.station(int(d.station)).is_empty() or cat.ship(int(d.ship.index)).is_empty() or cat.system(int(d.system)).is_empty():
+		return "The save refers to content this game file does not have."
+	if cat.system_of_station(int(d.station)) != int(d.system): return invalid
+	if not BlueprintRules.valid_saved(d.get("blueprints", {}), cat): return invalid
+	if d.equipment.size() != 4 or d.reputation.size() != 2 or d.markets.size() > 3: return invalid
+	var slots: Array = cat.ship_slots(int(d.ship.index))
+	for category in 4:
+		if not d.equipment[category] is Array: return invalid
+		if d.equipment[category].size() > slots[category]: return invalid
+		for entry in d.equipment[category]:
+			if entry == null: continue
+			if not _item_stack(entry, category) or int(entry.count) <= 0: return invalid
+	for value in d.reputation:
+		if not _whole(value, -100, 100): return invalid
+	for key in d.cargo:
+		if not _numeric_key(key) or cat.item(int(key)).is_empty() or not _whole(d.cargo[key], 1): return invalid
+	for key in d.stats:
+		if not key is String or not _whole(d.stats[key]): return invalid
+	for field in ["visited_stations", "visited_systems", "unlocked_systems"]:
+		for key in d.get(field, {}):
+			if not _numeric_key(key) or not d[field][key] is bool: return invalid
+			if field == "visited_stations" and cat.station(int(key)).is_empty(): return invalid
+			if field != "visited_stations" and cat.system(int(key)).is_empty(): return invalid
+	for m in [d.story_mission, d.job]:
+		if m.is_empty(): continue
+		if not _whole(m.get("kind")) or not _whole(m.get("station"), -1) or not _whole(m.get("reward")): return invalid
+		if int(m.station) >= 0 and cat.station(int(m.station)).is_empty(): return invalid
+		for key in ["count", "amount", "progress", "step", "target", "jobs_at_start"]:
+			if m.has(key) and not _whole(m[key]): return invalid
+		if m.has("item") and not _whole(m.item, -1): return invalid
+		if m.has("return_station"):
+			if not _whole(m.return_station) or cat.station(int(m.return_station)).is_empty() or not int(m.kind) in [3, 5]: return invalid
+		if m.has("recovery_item"):
+			if not int(m.kind) in [3, 5] or not _whole(m.recovery_item) or not m.has("return_station"): return invalid
+			if int(m.recovery_item) != (116 if int(m.kind) == 5 else 117): return invalid
+			if int(m.get("item", -1)) != (116 if int(m.kind) == 3 else 117): return invalid
+		if m.has("recovered"):
+			if not m.recovered is bool or not int(m.kind) in [3, 5]: return invalid
+			if m.recovered:
+				if not m.has("return_station") or int(m.station) != int(m.return_station): return invalid
+				var offered_item := 116 if int(m.kind) == 3 else 117
+				var mission_item := int(m.get("recovery_item", offered_item))
+				if int(m.get("item", -1)) != offered_item or int(d.cargo.get(str(mission_item), 0)) < 1: return invalid
+		for key in ["client", "wanted"]:
+			if m.has(key) and not m[key] is String: return invalid
+	var stations := {}
+	for market in d.markets:
+		if not market is Dictionary or not _whole(market.get("station")): return invalid
+		if cat.station(int(market.station)).is_empty() or stations.has(int(market.station)): return invalid
+		stations[int(market.station)] = true
+		if not market.get("items") is Array or not market.get("ships") is Array: return invalid
+		for item in market.items:
+			if not _item_stack(item) or not _whole(item.get("price")): return invalid
+		for offer in market.ships:
+			if not offer is Dictionary: return invalid
+			for key in ["index", "faction", "price"]:
+				if not _whole(offer.get(key)): return invalid
+			if cat.ship(int(offer.index)).is_empty(): return invalid
+		if market.has("lounge"):
+			if not market.lounge is Array: return invalid
+			for person in market.lounge:
+				if not person is Dictionary: return invalid
+				if not _whole(person.get("kind")) or not person.get("name") is String: return invalid
 	return ""

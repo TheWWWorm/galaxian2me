@@ -2,6 +2,7 @@ extends HBoxContainer
 ## Status: pilot record, standing with the factions and the ship's figures.
 
 const UI := preload("res://src/presentation/ui.gd")
+const StandingBar := preload("res://src/screens/station/standing_bar.gd")
 const Common := preload("res://src/screens/station/common.gd")
 
 var station
@@ -41,20 +42,37 @@ func _ready() -> void:
 		box.add_child(h)
 	box.add_child(HSeparator.new())
 	box.add_child(UI.label(lib.text(298), 16, UI.TEXT_GOOD))
-	# The two standing axes: Terran/Vossk and Midorian/Nivelian.
+	# The two standing axes, drawn with the original's standing art.
 	for axis in 2:
-		var h := HBoxContainer.new()
-		var pos := 0 if axis == 0 else 3
-		var neg := 1 if axis == 0 else 2
-		var left_name := UI.label(app.catalogue.faction_name(neg), 14)
-		left_name.custom_minimum_size.x = 90
-		h.add_child(left_name)
-		var bar := ProgressBar.new()
-		bar.min_value = -100; bar.max_value = 100
-		bar.value = int(s.reputation[axis])
-		bar.show_percentage = false
-		bar.custom_minimum_size = Vector2(200, 14)
-		bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		h.add_child(bar)
-		h.add_child(UI.label(app.catalogue.faction_name(pos), 14))
-		box.add_child(h)
+		var bar := StandingBar.new()
+		bar.setup(app, axis, int(s.reputation[axis]))
+		box.add_child(bar)
+	_medals_frame()
+
+## The original's medal list: each medal with its tier, and what it was
+## awarded for once held.
+func _medals_frame() -> void:
+	var Medals := preload("res://src/simulation/medals.gd")
+	var lib = app.library
+	var s = game.session
+	var count: int = Medals.table(lib).size()
+	var frame := UI.Frame.new("%s  %d/%d" % [lib.text(63), Medals.held_count(s, lib), count])
+	frame.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	add_child(frame)
+	var l := Common.scroll_list()
+	frame.add_child(l[0])
+	var box: VBoxContainer = l[1]
+	var sheet: Texture2D = lib.texture("medals")
+	for i in count:
+		var t: int = Medals.tier(s, i)
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 8)
+		if sheet != null: row.add_child(UI.picture(sheet, 1.5, Rect2(t * 31, 0, 31, 15)))
+		var text := VBoxContainer.new()
+		text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		text.add_child(UI.label(Medals.name(lib, i), 15, UI.TEXT if t > 0 else UI.TEXT_DIM))
+		if t > 0:
+			var d := UI.paragraph(Medals.description(lib, i, t), 12, UI.TEXT_DIM)
+			text.add_child(d)
+		row.add_child(text)
+		box.add_child(row)

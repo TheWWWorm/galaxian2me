@@ -12,6 +12,7 @@ var station
 var app
 var game
 var slots_list: VBoxContainer
+var ship_frame: UI.Frame
 var detail: VBoxContainer
 var sel_cat := -1
 var sel_slot := -1
@@ -20,11 +21,11 @@ func _ready() -> void:
 	app = station.app
 	game = station.game
 	add_theme_constant_override("separation", 10)
-	var left := UI.Frame.new(app.catalogue.ship_name(int(game.session.ship.index)))
-	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	add_child(left)
+	ship_frame = UI.Frame.new(app.catalogue.ship_name(int(game.session.ship.index)))
+	ship_frame.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	add_child(ship_frame)
 	var l := Common.scroll_list()
-	left.add_child(l[0])
+	ship_frame.add_child(l[0])
 	slots_list = l[1]
 	var info := UI.Frame.new(app.library.text(136))
 	info.custom_minimum_size.x = 340
@@ -37,7 +38,13 @@ func _ready() -> void:
 
 func _fill() -> void:
 	if not is_inside_tree(): return
+	var current_name: String = app.catalogue.ship_name(int(game.session.ship.index))
+	if ship_frame.title != current_name:
+		ship_frame.title = current_name
+		ship_frame.queue_redraw()
+	var keep_slots_list := Common.focus_index(slots_list)
 	for c in slots_list.get_children(): c.queue_free()
+	Common.refocus(slots_list, keep_slots_list)
 	var cat = app.catalogue
 	for c in 4:
 		var slots: Array = game.session.equipment[c]
@@ -61,11 +68,17 @@ func _select(c: int, i: int) -> void:
 	sel_cat = c
 	sel_slot = i
 	_detail()
+	# The first mounted item picked: what can be done with it.
+	var slots: Array = game.session.equipment[c]
+	if i < slots.size() and slots[i] != null: station._tip("actions")
 
 func _detail() -> void:
+	var keep_detail := Common.focus_index(detail)
 	for c in detail.get_children(): c.queue_free()
+	Common.refocus(detail, keep_detail)
 	if sel_cat < 0:
-		detail.add_child(UI.paragraph(app.library.text(310), 14, UI.TEXT_DIM))
+		# The original's help here names phone keys; this says what to do here.
+		detail.add_child(UI.paragraph("This is your ship with all its weapons and equipment. Pick a slot to see what is fitted there, fit an item from your hold, or remove or sell what is fitted.", 14, UI.TEXT_DIM))
 		return
 	var cat = app.catalogue
 	var slots: Array = game.session.equipment[sel_cat]

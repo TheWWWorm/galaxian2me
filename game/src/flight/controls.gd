@@ -1,12 +1,23 @@
 extends Node
-## Flight input: keyboard, mouse and gamepad mapped onto the original's
+## Flight input: keyboard, mouse, gamepad and touch mapped onto the original's
 ## phone controls (steer, fire, secondary weapon, booster, autopilot, auto
 ## fire, rear view, target selection, action menu).
 
 var app
 var mouse_steer := true
+## The pointer steers only while it was the last thing used: moving it
+## takes the helm, a steering key or the pad's stick hands it back, so a
+## resting cursor never turns the ship.
+var mouse_owns := false
+const MOUSE_TAKEOVER_PX := 6.0
 var fire_was := false
 var pressed := {}
+## The eased steering of the smooth helm.
+var helm := Vector2.ZERO
+var touch: Control
+
+const TouchControls := preload("res://src/flight/touch_controls.gd")
+const Prefs := preload("res://src/presentation/preferences.gd")
 
 const ACTIONS := {
 	"steer_left": [KEY_LEFT, KEY_A], "steer_right": [KEY_RIGHT, KEY_D],
@@ -14,35 +25,57 @@ const ACTIONS := {
 	"fire": [KEY_SPACE, KEY_CTRL], "secondary": [KEY_E], "boost": [KEY_SHIFT],
 	"autopilot": [KEY_Q], "auto_fire": [KEY_F], "rear_view": [KEY_C],
 	"next_target": [KEY_TAB], "action_menu": [KEY_M], "map": [KEY_N],
+	"pause": [KEY_ESCAPE], "photo": [KEY_P], "cloak": [KEY_V], "time_warp": [KEY_T],
 }
 const PAD := {
 	"fire": JOY_BUTTON_RIGHT_SHOULDER, "secondary": JOY_BUTTON_LEFT_SHOULDER,
 	"boost": JOY_BUTTON_A, "autopilot": JOY_BUTTON_Y, "next_target": JOY_BUTTON_X,
 	"rear_view": JOY_BUTTON_RIGHT_STICK, "action_menu": JOY_BUTTON_BACK,
+	"pause": JOY_BUTTON_START,
 }
 
 func _ready() -> void:
+	ensure_actions()
+	Prefs.apply_bindings(app, ACTIONS)
+	mouse_steer = bool(app.setting("controls", "mouse", true)) and not OS.has_feature("mobile") and not TouchControls.wanted(app)
+
+func _input(event: InputEvent) -> void:
+	if event is InputEventMouseMotion:
+		if event.relative.length() >= MOUSE_TAKEOVER_PX: mouse_owns = true
+	elif event is InputEventJoypadMotion:
+		if event.axis in [JOY_AXIS_LEFT_X, JOY_AXIS_LEFT_Y] and absf(event.axis_value) > Prefs.deadzone(app): mouse_owns = false
+	elif event is InputEventKey or event is InputEventJoypadButton:
+		if event.pressed:
+			for action in ["steer_left", "steer_right", "steer_up", "steer_down"]:
+				if event.is_action(action): mouse_owns = false
+
+## Screens are recreated on every arrival. Never accumulate duplicate bindings.
+static func ensure_actions() -> void:
 	for action in ACTIONS:
-		if InputMap.has_action(action): continue
-		InputMap.add_action(action, 0.2)
+		if not InputMap.has_action(action): InputMap.add_action(action, 0.2)
 		for key in ACTIONS[action]:
 			var e := InputEventKey.new()
 			e.physical_keycode = key
-			InputMap.action_add_event(action, e)
+			if not InputMap.action_has_event(action, e): InputMap.action_add_event(action, e)
 		if PAD.has(action):
 			var j := InputEventJoypadButton.new()
 			j.button_index = PAD[action]
-			InputMap.action_add_event(action, j)
+			if not InputMap.action_has_event(action, j): InputMap.action_add_event(action, j)
 	for pair in [["steer_left", JOY_AXIS_LEFT_X, -1.0], ["steer_right", JOY_AXIS_LEFT_X, 1.0], ["steer_up", JOY_AXIS_LEFT_Y, -1.0], ["steer_down", JOY_AXIS_LEFT_Y, 1.0]]:
 		var m := InputEventJoypadMotion.new()
 		m.axis = pair[1]
 		m.axis_value = pair[2]
-		InputMap.action_add_event(pair[0], m)
+		if not InputMap.action_has_event(pair[0], m): InputMap.action_add_event(pair[0], m)
 	var trigger := InputEventJoypadMotion.new()
 	trigger.axis = JOY_AXIS_TRIGGER_RIGHT
 	trigger.axis_value = 1.0
-	InputMap.action_add_event("fire", trigger)
-	mouse_steer = bool(app.setting("controls", "mouse", true)) and not OS.has_feature("mobile")
+	if not InputMap.action_has_event("fire", trigger): InputMap.action_add_event("fire", trigger)
+
+func reset() -> void:
+	fire_was = false
+	helm = Vector2.ZERO
+	pressed.clear()
+	if is_instance_valid(touch): touch.reset()
 
 func _just(action: String) -> bool:
 	return Input.is_action_just_pressed(action)
@@ -53,29 +86,57 @@ var scripted: Callable = Callable()
 ## The steering and trigger state for this frame.
 func state(view) -> Dictionary:
 	if scripted.is_valid(): return scripted.call()
+	var virtual: Dictionary = touch.sample() if is_instance_valid(touch) else {}
 	var invert := -1.0 if bool(app.setting("controls", "invert", false)) else 1.0
 	var yaw := Input.get_axis("steer_left", "steer_right")
 	var pitch := Input.get_axis("steer_down", "steer_up") * invert
-	var fire := Input.is_action_pressed("fire")
-	var secondary := _just("secondary")
+	var lean := Prefs.tilt(app)
+	yaw = clampf(yaw + float(virtual.get("yaw", 0.0)) + lean.x, -1.0, 1.0)
+	pitch = clampf(pitch + lean.y * invert, -1.0, 1.0)
+	pitch = clampf(pitch + float(virtual.get("pitch", 0.0)) * invert, -1.0, 1.0)
+	var fire := Input.is_action_pressed("fire") or bool(virtual.get("fire", false))
+	var secondary := _just("secondary") or bool(virtual.get("secondary", false))
+	# Looking around: Alt (or the right stick) swings the camera round the
+	# ship instead of steering it.
+	var look := Vector2.ZERO
+	for pad in Input.get_connected_joypads():
+		var stick := Vector2(Input.get_joy_axis(pad, JOY_AXIS_RIGHT_X), Input.get_joy_axis(pad, JOY_AXIS_RIGHT_Y))
+		if stick.length() > Prefs.deadzone(app): look = stick.limit_length(1.0)
+	var touch_look: Vector2 = virtual.get("look", Vector2.ZERO)
+	if touch_look != Vector2.ZERO: look = touch_look
 	if mouse_steer and DisplayServer.window_is_focused():
 		var vp := get_viewport()
 		var size := vp.get_visible_rect().size
 		var m := vp.get_mouse_position() - size / 2.0
-		var r := minf(size.x, size.y) * 0.35
+		var r := minf(size.x, size.y) * 0.35 / Prefs.mouse_sensitivity(app)
 		var v := m / r
-		if v.length() > 0.08 and absf(yaw) < 0.01 and absf(pitch) < 0.01:
+		if Input.is_key_pressed(KEY_ALT):
+			look = Vector2(clampf(v.x, -1.0, 1.0), clampf(v.y, -1.0, 1.0))
+		elif mouse_owns and v.length() > 0.08 and absf(yaw) < 0.01 and absf(pitch) < 0.01:
 			yaw = clampf(v.x, -1.0, 1.0)
 			pitch = clampf(-v.y, -1.0, 1.0) * invert
 		fire = fire or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
 		secondary = secondary or (Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) and not pressed.get("rmb", false))
 		pressed["rmb"] = Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
-	var fire_pressed := fire and not fire_was
+	if str(app.setting("controls", "helm", "direct")) == "smooth":
+		# Eases into a turn over a fraction of a second and out of it again.
+		var step := 4.0 / float(Engine.physics_ticks_per_second)
+		helm = Vector2(move_toward(helm.x, yaw, step), move_toward(helm.y, pitch, step))
+		yaw = helm.x
+		pitch = helm.y
+	else:
+		helm = Vector2(yaw, pitch)
+	var fire_pressed := (fire and not fire_was) or bool(virtual.get("fire_pressed", false))
 	fire_was = fire
-	if _just("rear_view") and view != null: view.rear_view = not view.rear_view
-	if _just("auto_fire"):
+	if view != null: view.look_input = look
+	if (_just("rear_view") or bool(virtual.get("rear_view", false))) and view != null: view.toggle_look()
+	var auto_toggled: bool = _just("auto_fire") or bool(virtual.get("auto_fire", false))
+	if auto_toggled:
 		app.set_setting("controls", "auto_fire", not bool(app.setting("controls", "auto_fire", false)))
 	return {"yaw": yaw, "pitch": pitch, "fire": fire, "fire_pressed": fire_pressed, "secondary": secondary,
-		"boost": Input.is_action_pressed("boost"), "next_target": _just("next_target"),
-		"autopilot": _just("autopilot"), "action_menu": _just("action_menu"), "map": _just("map"),
-		"auto_fire": bool(app.setting("controls", "auto_fire", false))}
+		"boost": Input.is_action_pressed("boost") or bool(virtual.get("boost", false)),
+		"next_target": _just("next_target") or bool(virtual.get("next_target", false)),
+		"autopilot": _just("autopilot") or bool(virtual.get("autopilot", false)),
+		"cloak": _just("cloak"), "time_warp": _just("time_warp") or bool(virtual.get("time_warp", false)),
+		"action_menu": _just("action_menu") or bool(virtual.get("action_menu", false)), "map": _just("map") or bool(virtual.get("map", false)),
+		"auto_fire": bool(app.setting("controls", "auto_fire", false)), "auto_fire_toggled": auto_toggled}

@@ -43,13 +43,16 @@ func _init(asteroid_class: int, ore_id: int, laser_id: int, cat) -> void:
 	rate = float(cat.attr(laser_id, Catalogue.A_MINING_SPEED)) / 100.0
 
 func half_width() -> float:
-	return (2.0 * MARGIN + 3.0 * WIDTHS[layer]) / 2.0
+	# aw.java clamps to an integer pixel, including odd-width layers.
+	return float(int((2 * MARGIN + 3 * WIDTHS[layer]) / 2.0))
 
 ## Advances by `ms`; `left`/`right` steer the drill. Returns false when over.
 func step(ms: int, left: bool, right: bool) -> bool:
 	if finished: return false
 	drift_time += ms
-	if absf(drill) > WIDTHS[layer] / 2.0:
+	# The phone tests abs((int)drill) against integer width/2, not the
+	# subpixel coordinate. Fractional positions at the edge remain green.
+	if absi(int(drill)) > int(WIDTHS[layer] / 2.0):
 		red += ms
 		if red > RED_LIMIT:
 			red = RED_LIMIT

@@ -19,13 +19,16 @@ const TRADER_CATEGORY := [5, 20, 2, 5, 100]
 ## into the hold; they cannot be sold and are handed over on arrival.
 const COURIER_FREIGHT := 116
 
-var game
+## Game owns the lounge, not the other way around.
+var _owner: WeakRef
+var game:
+	get: return _owner.get_ref()
 var cat
 var lib
 var rng := RandomNumberGenerator.new()
 
 func _init(owner) -> void:
-	game = owner
+	_owner = weakref(owner)
 	cat = owner.cat
 	lib = owner.library
 	rng.randomize()
@@ -127,8 +130,8 @@ func _hostile_to(faction: int) -> bool:
 	match faction:
 		0: return int(rep[0]) < -60
 		1: return int(rep[0]) > 60
-		2: return int(rep[1]) > 60
-		3: return int(rep[1]) < -60
+		2: return int(rep[1]) < -60
+		3: return int(rep[1]) > 60
 	return false
 
 ## A trader's goods: something ordinary, a handful of commodities or a single
@@ -292,7 +295,8 @@ func speech(p: Dictionary) -> String:
 			if int(p.count) > 1: body += " " + lib.text(414).replace("#C", _money(int(p.price) / int(p.count)))
 		Kind.WINGMEN:
 			var extra: int = p.pilots.size() - 1
-			body = lib.text(418 + extra).replace("#C", _money(int(p.price)))
+			var fans := bool(game.session.flags.get("all_medals", false))
+			body = lib.text((421 if fans else 418) + extra).replace("#C", _money(int(p.price)))
 			if extra > 0: body = body.replace("#W", str(p.pilots[1]))
 	return (hello + " " + intro + " " + plea).strip_edges() + "\n" + body + "\n" + _pick(475, 3)
 
@@ -322,8 +326,19 @@ func accept(person: Dictionary) -> String:
 			if int(job.kind) == 0 and s.cargo_free() < int(job.count):
 				return lib.text(162).replace("#Q", str(job.count))
 			if int(job.kind) == 11 and int(s.ship_stats().cabins) < int(job.count):
-				return lib.text(163).replace("#Q", str(job.count))
+				return lib.text(163).replace("#Q", str(int(job.count)))
 			s.job = job.duplicate(true)
+			if int(job.get("station", -1)) != s.station_id:
+				if not bool(person.get("asked_difficulty", false)): s.add_stat("accepted_unasked_difficulty")
+				if not bool(person.get("asked_location", false)): s.add_stat("accepted_unasked_location")
+			# Main/o changes recovery into a return to the accepting agent's
+			# station. Record that real address before consuming the offer.
+			if int(job.kind) in [3, 5]:
+				s.job["return_station"] = s.station_id
+				# The source carrier uses the opposite ID from the offer/HUD:
+				# hostage -> 116, recovery -> 117. Keep presentation unchanged.
+				# Explicit metadata distinguishes new contracts from old saves.
+				s.job["recovery_item"] = 116 if int(job.kind) == 5 else 117
 			if int(job.kind) == 0:
 				s.add_cargo(COURIER_FREIGHT, int(job.count))
 			elif int(job.kind) == 11:
@@ -338,6 +353,8 @@ func accept(person: Dictionary) -> String:
 			if s.cargo_free() < count: return lib.text(159)
 			s.credits -= int(person.price)
 			s.add_cargo(int(person.item), count)
+			if int(person.item) >= 132 and int(person.item) <= 153:
+				preload("res://src/simulation/medals.gd").mark(s, "drink_types", int(person.item) - 132)
 			if person.has("agent"): s.flags["agent_done_%d" % int(person.agent)] = true
 			person.kind = Kind.TALK
 			person.speech = lib.text(492)
@@ -351,11 +368,16 @@ func accept(person: Dictionary) -> String:
 			person.speech = lib.text(492)
 			return ""
 		Kind.WINGMEN:
-			if s.credits < int(person.price): return lib.text(83).replace("#C", _money(int(person.price) - s.credits))
+			# With every medal, admirers pay to fly along instead.
+			var fans := bool(s.flags.get("all_medals", false))
+			if not fans and s.credits < int(person.price): return lib.text(83).replace("#C", _money(int(person.price) - s.credits))
 			if not s.flags.get("wingmen", []).is_empty(): return lib.text(424)
-			s.credits -= int(person.price)
+			s.credits += int(person.price) if fans else -int(person.price)
 			s.flags["wingmen"] = person.pilots.duplicate()
 			s.flags["wingmen_race"] = int(person.race)
+			s.flags["wingmen_remaining_ms"] = 600000
+			s.flags["wingmen_face"] = person.get("face", []).duplicate()
+			s.add_stat("commanded_wingmen", person.pilots.size())
 			person.kind = Kind.TALK
 			person.speech = lib.text(492)
 			return ""

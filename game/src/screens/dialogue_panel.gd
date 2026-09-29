@@ -14,11 +14,15 @@ var frame
 var portrait: Control
 var name_label: Label
 var text: Label
+## What to press here for keys the line names in the phone's terms.
+var key_note: Label
 var next_button: Button
 var back_button: Button
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# The original's chime whenever a message box opens.
+	if app != null: app.play_sound("fx_message_02", 0.7)
 	var shade := ColorRect.new()
 	shade.color = Color(0, 0, 0, 0.35)
 	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -42,6 +46,9 @@ func _ready() -> void:
 	text = UI.paragraph("", 16)
 	text.custom_minimum_size = Vector2(560, 90)
 	v.add_child(text)
+	key_note = UI.paragraph("", 13, UI.TEXT_DIM)
+	key_note.custom_minimum_size.x = 560
+	v.add_child(key_note)
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_END
 	v.add_child(row)
@@ -56,6 +63,8 @@ func _show() -> void:
 	frame.title = str(line.get("name", ""))
 	frame.queue_redraw()
 	text.text = str(line.get("text", ""))
+	key_note.text = preload("res://src/screens/help_panel.gd").key_note(app, text.text)
+	key_note.visible = not key_note.text.is_empty()
 	for c in portrait.get_children(): c.queue_free()
 	var p := Portrait.make(app.library, int(line.get("speaker", -1)), line.get("face", []))
 	if p != null: portrait.add_child(p)

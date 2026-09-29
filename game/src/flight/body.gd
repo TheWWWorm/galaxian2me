@@ -3,7 +3,7 @@ extends RefCounted
 ## floating container. Positions are in the original's units and axes (which
 ## match Godot's); the view scales them down.
 
-enum Kind { PLAYER, SHIP, FREIGHTER, STATION, GATE, ARRIVAL, WORMHOLE, ASTEROID, LOOT, STAR }
+enum Kind { PLAYER, SHIP, FREIGHTER, STATION, GATE, ARRIVAL, WORMHOLE, ASTEROID, LOOT, STAR, MOTHERSHIP }
 
 var kind := Kind.SHIP
 var name := ""
@@ -17,6 +17,9 @@ var alive := true
 var visible := true
 ## Distance-limited targets (stations of other planets) are not collidable.
 var solid := true
+## A scripted waiting ship is visible, but not yet part of combat. The
+## original's actor state five disables damage until the encounter starts.
+var combat_active := true
 
 # Combat figures, as the original keeps them per ship.
 var hull := 1
@@ -70,6 +73,10 @@ func up() -> Vector3:
 
 func is_ship() -> bool:
 	return kind == Kind.SHIP or kind == Kind.FREIGHTER or kind == Kind.PLAYER
+
+## Cleanup debris uses the ship targeting/hit path, but is not a combat kill.
+func is_junk() -> bool:
+	return kind == Kind.SHIP and ship_index == -1 and model == "spacejunk"
 
 func damage(amount: float, emp_amount := 0.0) -> void:
 	if not alive: return
