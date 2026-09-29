@@ -21,6 +21,23 @@ var progress_mutex := Mutex.new()
 var _progress := {"message": "", "ratio": 0.0}
 var cancelled := false
 var warnings: PackedStringArray = []
+## Set on builds without threads: the conversion then runs on the main thread
+## and hands the frame back every SLICE_MS, so the progress bar keeps moving
+## and the browser never sees an unresponsive page.
+var tree: SceneTree
+const SLICE_MS := 40
+var _slice := 0
+var longest_slice := 0
+
+## Awaited between units of work; returns at once when there is no tree or
+## the current slice still has time left.
+func pace() -> void:
+	if tree == null: return
+	var now := Time.get_ticks_msec()
+	if now - _slice < SLICE_MS: return
+	longest_slice = maxi(longest_slice, now - _slice)
+	await tree.process_frame
+	_slice = Time.get_ticks_msec()
 
 func progress() -> Dictionary:
 	progress_mutex.lock()
@@ -76,6 +93,7 @@ func _manifest(zip: ZIPReader) -> Dictionary:
 ## Runs the whole conversion. Returns {"ok": true, "id": sha} or {"error": ...}.
 func run(jar_path: String) -> Dictionary:
 	warnings.clear()
+	_slice = Time.get_ticks_msec()
 	_report("Checking the archive…", 0.0)
 	var probe := FileAccess.open(jar_path, FileAccess.READ)
 	var size := probe.get_length() if probe != null else 0
@@ -99,14 +117,15 @@ func run(jar_path: String) -> Dictionary:
 		if n.begins_with("data/v3d/") and n.ends_with(".mbac"): has_mbac = true; break
 	if not has_mbac:
 		zip.close()
-		return {"error": "This build stores its models in a format the engine does not read (no Mascot Capsule models under data/v3d)."}
+		return {"error": "This build stores its models in a format the engine does not read (no Mascot Capsule models under data/v3d). Use the Sony Ericsson version of the game."}
+	await pace()
 	var sha := sha256_file(jar_path)
 	var final_dir := content_root().path_join(sha)
 	var stage := content_root().path_join(".staging-" + sha)
 	_remove_tree(stage)
 	for sub in ["img", "img/faces", "tex", "models", "anims", "sfx", "music"]:
 		DirAccess.make_dir_recursive_absolute(stage.path_join(sub))
-	var result := _convert(zip, names, manifest, sha, stage)
+	var result: Dictionary = await _convert(zip, names, manifest, sha, stage)
 	zip.close()
 	if result.has("error") or cancelled:
 		_remove_tree(stage)
@@ -137,6 +156,7 @@ func _convert(zip: ZIPReader, names: PackedStringArray, manifest: Dictionary, sh
 		"station_parts": [Formats.station_parts, "data/txt/stationparts.bin"],
 	}
 	for key in table_readers:
+		await pace()
 		var reader: Callable = table_readers[key][0]
 		var parsed: Dictionary = reader.call(zip.read_file(table_readers[key][1]))
 		if parsed.has("error"): return {"error": "Unsupported data layout: " + parsed.error}
@@ -144,6 +164,7 @@ func _convert(zip: ZIPReader, names: PackedStringArray, manifest: Dictionary, sh
 	var name_lists := {}
 	for n in names:
 		if n.begins_with("data/txt/names_") and n.ends_with(".bin"):
+			await pace()
 			var parsed: Dictionary = Formats.names(zip.read_file(n))
 			if parsed.has("error"): return {"error": "Unsupported data layout: " + n}
 			name_lists[n.get_file().get_basename()] = parsed.value
@@ -152,6 +173,7 @@ func _convert(zip: ZIPReader, names: PackedStringArray, manifest: Dictionary, sh
 	var languages := {}
 	for n in names:
 		if n.begins_with("data/lang/") and n.ends_with(".lang"):
+			await pace()
 			var code := n.get_file().get_basename()
 			var strings := Formats.lang_strings(zip.read_file(n))
 			if strings.size() >= 1000: languages[code] = strings
@@ -159,7 +181,7 @@ func _convert(zip: ZIPReader, names: PackedStringArray, manifest: Dictionary, sh
 	data.languages = languages
 	# Class constants: static initializers and resource registrations.
 	_report("Reading constant data…", 0.08)
-	var constants := _read_constants(zip, names)
+	var constants: Dictionary = await _read_constants(zip, names)
 	if constants.has("error"): return constants
 	data.constants = constants.statics
 	data.models = constants.models
@@ -176,6 +198,7 @@ func _convert(zip: ZIPReader, names: PackedStringArray, manifest: Dictionary, sh
 	for n in names:
 		index += 1
 		if cancelled: return {"error": "Import cancelled."}
+		await pace()
 		if index % 12 == 0: _report("Converting resources…", 0.1 + 0.6 * float(index) / total)
 		var file := n.get_file()
 		var bytes: PackedByteArray
@@ -224,17 +247,19 @@ func _convert(zip: ZIPReader, names: PackedStringArray, manifest: Dictionary, sh
 		if cancelled: return {"error": "Import cancelled."}
 		_report("Rendering music %d of %d…" % [i + 1, music.size()], 0.72 + 0.26 * float(i) / maxf(1, music.size()))
 		var mid := FileAccess.get_file_as_bytes(stage.path_join("music/" + music[i]))
-		var wav := MidiSynth.render(mid, func(): return cancelled)
+		var wav: PackedByteArray = await MidiSynth.render(mid, func(): return cancelled, pace)
 		if wav.is_empty():
 			warnings.append("Could not render " + music[i]); continue
 		_write_bytes(stage.path_join("music/" + music[i].get_basename() + ".wav"), wav)
 		counts.music += 1
 	_report("Finishing…", 0.99)
+	await pace()
 	var info := {"format": FORMAT, "id": sha, "name": manifest.get("MIDlet-Name", ""),
 		"version": manifest.get("MIDlet-Version", ""), "vendor": manifest.get("MIDlet-Vendor", ""),
 		"languages": languages.keys(), "counts": counts, "warnings": warnings,
 		"full_campaign": data.online.has("story_stations"), "ship_records": data.ships.size()}
 	if not _write_json(stage.path_join("data.json"), data): return {"error": "Could not write converted data."}
+	await pace()
 	if not _write_json(stage.path_join("manifest.json"), info): return {"error": "Could not write converted data."}
 	return {"ok": true}
 
@@ -248,6 +273,7 @@ func _read_constants(zip: ZIPReader, names: PackedStringArray) -> Dictionary:
 	var classes := {}
 	for n in names:
 		if not n.ends_with(".class"): continue
+		await pace()
 		var c = ClassReader.parse(zip.read_file(n))
 		if not c.error.is_empty():
 			warnings.append("Unreadable class " + n); continue
@@ -256,6 +282,7 @@ func _read_constants(zip: ZIPReader, names: PackedStringArray) -> Dictionary:
 	for cname in classes:
 		var c = classes[cname]
 		if not c.methods.has("<clinit>:()V"): continue
+		await pace()
 		var local := {}
 		var r: Dictionary = c.evaluate("<clinit>:()V", local, _string_calls.bind(ignore))
 		if r.has("error"): continue
@@ -267,6 +294,7 @@ func _read_constants(zip: ZIPReader, names: PackedStringArray) -> Dictionary:
 		var c = classes[cname]
 		for key in c.method_keys():
 			if not key.begins_with("<init>:"): continue
+			await pace()
 			var record := {"new": cname}
 			var initial: Array = [record]
 			for _a in ClassReader.argument_count(key.substr(key.find(":") + 1)): initial.append(0)
@@ -287,6 +315,7 @@ func _read_constants(zip: ZIPReader, names: PackedStringArray) -> Dictionary:
 		if hits < 20: continue
 		for key in c.method_keys():
 			if not key.ends_with(")V") or key.begins_with("<"): continue
+			await pace()
 			var found := {}
 			var found_tex := {}
 			var capture := func(_owner, _method, desc, args, _target):
@@ -308,9 +337,11 @@ func _read_constants(zip: ZIPReader, names: PackedStringArray) -> Dictionary:
 				models[id] = entry
 			for id in found_tex: textures[id] = str(found_tex[id]).get_file()
 	var t0 := Time.get_ticks_msec()
-	var online := _read_online_data(classes, statics)
+	_report("Reading constant data…", 0.09)
+	var online: Dictionary = await _read_online_data(classes, statics)
 	var t1 := Time.get_ticks_msec()
-	var campaign := _read_campaign(classes, statics, online)
+	_report("Reading the campaign…", 0.095)
+	var campaign: Dictionary = await _read_campaign(classes, statics, online)
 	if OS.is_debug_build(): print("constants: clinit %d ms, online %d ms, campaign %d ms" % [t0 - started, t1 - t0, Time.get_ticks_msec() - t1])
 	return {"statics": statics, "models": models, "textures": textures, "online": online, "campaign": campaign}
 
@@ -335,6 +366,7 @@ func _read_campaign(classes: Dictionary, statics: Dictionary, online: Dictionary
 			if high < 20 or high > 200: continue
 			var steps: Array = []
 			for step in high:
+				await pace()
 				var local := {}
 				for k in statics:
 					if k.begins_with(cname + "."): local[k] = statics[k] if not (statics[k] is Array) else statics[k].duplicate(true)
@@ -372,8 +404,9 @@ func _read_campaign(classes: Dictionary, statics: Dictionary, online: Dictionary
 						changes[k] = _plain(local[k])
 				record.statics = changes
 				steps.append(record)
+			var radio: Dictionary = await _read_radio(classes, high)
 			return {"counter": field, "steps": steps, "start": _read_start(c, key, field, statics),
-				"radio": _read_radio(classes, high)}
+				"radio": radio}
 	return {}
 
 ## In-flight radio of the story: a method taking the story step and returning
@@ -389,6 +422,7 @@ func _read_radio(classes: Dictionary, steps: int) -> Dictionary:
 			var out := {}
 			var total := 0
 			for step in steps + 1:
+				await pace()
 				var records: Array = []
 				var capture := func(_owner, method, desc, args, target):
 					if method == "<init>" and target is Dictionary and (desc == "(IIII)V" or desc == "(III[I)V"):
@@ -424,6 +458,7 @@ func _read_online_data(classes: Dictionary, statics: Dictionary) -> Dictionary:
 			if not key.ends_with(":()V") or key.begins_with("<"): continue
 			var flags: int = c.methods[key].flags
 			if not (flags & 0x0008): continue
+			await pace()
 			var calls: Array = []
 			var capture := func(owner, method, desc, args, _t):
 				if desc == "([B)V" and args.size() == 1 and args[0] is Array and args[0].size() >= 36 * 16:

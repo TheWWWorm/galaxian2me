@@ -24,7 +24,7 @@ Download the package for your system from the [Releases](https://github.com/TheW
 - **Linux (x86-64):** extract the ZIP and run `gof2-remake.x86_64`. If your file manager dropped the executable permission, run `chmod +x gof2-remake.x86_64` first.
 - **macOS (Apple silicon and Intel):** extract the ZIP and open the app. It is not signed or notarized, so macOS may block the first start; allow it under **System Settings → Privacy & Security**.
 - **Android (7 or newer, ARM64 or x86-64):** install the APK (allow installing from your browser or file manager when asked). **Choose JAR** opens the system file picker.
-- **Web:** open [galaxian2me.wwworm.com](https://galaxian2me.wwworm.com/) and choose your JAR. It is converted inside your browser and never uploaded. The page stops responding while it converts; keep the tab open until it finishes.
+- **Web:** open [galaxian2me.wwworm.com](https://galaxian2me.wwworm.com/) and choose your JAR. It is converted inside your browser and never uploaded; the progress bar shows how far it has got. Keep the tab open until it finishes.
 
 ### Playing in a browser
 
@@ -32,12 +32,12 @@ On iPhone or iPad, open the site in Safari and choose **Share → Add to Home Sc
 
 Use a browser with WebGL 2 and persistent site storage. Converted content and saves belong to that browser and site; clearing site data removes them, and private browsing may not keep them. The desktop and Android versions run better on low-memory devices.
 
-Every version needs a Galaxy on Fire 2 J2ME JAR that you provide. The game does not look for a particular build, file name or checksum: it tries to read whatever JAR you give it and tells you if something in it cannot be used.
+Every version needs a Galaxy on Fire 2 J2ME JAR that you provide, and it must be the **Sony Ericsson version** of the game (the one with Mascot Capsule 3D models, `.mbac` files under `data/v3d/`). Versions made for other phones store their 3D models differently and cannot be played. Apart from that the game does not look for a particular build, file name or checksum: it tries to read whatever JAR you give it and tells you if something in it cannot be used.
 
 ## Getting started
 
 1. Start the engine.
-2. Choose your Galaxy on Fire 2 JAR when asked, or drop it onto the window. Its file name does not matter.
+2. Choose your Galaxy on Fire 2 JAR (Sony Ericsson version) when asked, or drop it onto the window. Its file name does not matter.
 3. Wait for the one-time conversion (under a minute). The converted content is kept in your user data folder, one folder per JAR, so different builds never mix.
 
 Saves are kept per converted game in the same user folder. Each completed docking creates an **Autosave**, after the station arrival and campaign rewards have settled. Both load menus offer this checkpoint alongside three manual slots; use the station's Game Options section to make a manual save. Starting a new game, trading or loading a slot does not overwrite the docking checkpoint. When your ship is lost, **Game Over** offers to continue from the autosave's station (or to start the opening again when there is none), or to go back to the menu.

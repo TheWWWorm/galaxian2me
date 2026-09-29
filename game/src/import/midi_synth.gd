@@ -129,7 +129,9 @@ static func _finish(note: Dictionary, end: float) -> Dictionary:
 	return note
 
 ## Renders a MIDI file to a 16-bit stereo WAV. `is_cancelled` is polled per note.
-static func render(bytes: PackedByteArray, is_cancelled: Callable = Callable()) -> PackedByteArray:
+## `pace`, when given, is awaited between notes and sample blocks so a
+## single-threaded caller can keep drawing frames.
+static func render(bytes: PackedByteArray, is_cancelled: Callable = Callable(), pace: Callable = Callable()) -> PackedByteArray:
 	var parsed := notes(bytes)
 	if parsed.is_empty(): return PackedByteArray()
 	var length := int(ceil(parsed.duration * RATE))
@@ -140,6 +142,7 @@ static func render(bytes: PackedByteArray, is_cancelled: Callable = Callable()) 
 	var tables := {}
 	for note in parsed.notes:
 		if is_cancelled.is_valid() and is_cancelled.call(): return PackedByteArray()
+		if pace.is_valid(): await pace.call()
 		var family: int = note.program >> 3
 		var frequency := 440.0 * pow(2.0, (note.key - 69) / 12.0)
 		var start := int(floor(note.start * RATE))
@@ -192,7 +195,9 @@ static func render(bytes: PackedByteArray, is_cancelled: Callable = Callable()) 
 			left[i] += s * gl
 			right[i] += s * gr
 	var peak := 1.0
-	for i in length: peak = maxf(peak, maxf(absf(left[i]), absf(right[i])))
+	for i in length:
+		peak = maxf(peak, maxf(absf(left[i]), absf(right[i])))
+		if i & 0xFFFF == 0 and pace.is_valid(): await pace.call()
 	var out := PackedByteArray()
 	out.resize(44 + length * 4)
 	out.encode_u32(0, 0x46464952)  # RIFF
@@ -210,6 +215,7 @@ static func render(bytes: PackedByteArray, is_cancelled: Callable = Callable()) 
 	out.encode_u32(40, length * 4)
 	var scale := 30000.0 / peak
 	for i in length:
+		if i & 0xFFFF == 0 and pace.is_valid(): await pace.call()
 		out.encode_s16(44 + i * 4, int(round(left[i] * scale)))
 		out.encode_s16(46 + i * 4, int(round(right[i] * scale)))
 	return out

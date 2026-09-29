@@ -2,6 +2,8 @@
 
 ## 0.1.1
 
+- Web: the JAR conversion runs in slices of about 40 ms on the main thread and draws a frame between them, so the progress bar advances and the browser no longer reports the page as unresponsive.
+- The import screen, README and the incompatible-build error state that the Sony Ericsson (Mascot Capsule 3D) version of the JAR is required.
 - Space Lounge: the named agents' records (`data/txt/agents.bin`) were read with the secret-system and blueprint fields swapped. The twelve blueprint sellers now unlock the blueprint (previously a cargo item was put in the hold). The four coordinate sellers now reveal their hidden system (previously they created an invalid blueprint entry). The offers name the right blueprint or system, and the purchase question uses texts 503/504.
 - Saves made with 0.1.0 are repaired on load: a blueprint or coordinates already paid for is granted, and the invalid blueprint entry is removed. Such saves could previously fail validation. The cargo item received in error is kept.
 - Map: after coordinates are bought, the map opens on the galaxy chart and the new system's star grows over 4 s. Its gate links and details appear afterwards, and only Back works during the animation (StarMap discovery scene).

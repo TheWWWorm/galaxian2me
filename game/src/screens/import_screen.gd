@@ -12,6 +12,8 @@ var bar: ProgressBar
 var choose: Button
 var importer: Importer
 var thread: Thread
+## True while a thread-less build converts on the main thread.
+var running := false
 var dialog: FileDialog
 ## In a browser the JAR comes through the page's own file picker; its bytes
 ## are copied into browser storage and converted there, never uploaded.
@@ -39,6 +41,7 @@ func _ready() -> void:
 	frame.add_child(box)
 	var how := "Choose the game's JAR file." if OS.has_feature("web") else "Choose the game's JAR file, or drop it onto this window."
 	box.add_child(UI.paragraph("This engine plays the mobile (J2ME) Galaxy on Fire 2 using the game data from your own copy. %s It is converted on this device; nothing is uploaded, and no game content comes with the engine." % how))
+	box.add_child(UI.paragraph("You need the Sony Ericsson version of the game (Mascot Capsule 3D); versions for other phones cannot be played.", 14, UI.TEXT_WARN))
 	box.add_child(UI.paragraph("The conversion takes under a minute and only happens once.", 14, UI.TEXT_DIM))
 	choose = UI.button("Choose JAR file…", _choose)
 	choose.alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -131,11 +134,12 @@ func import_file(path: String) -> void:
 		copy.close()
 		path = WEB_JAR
 	if OS.has_feature("web") and not OS.has_feature("threads"):
-		# A browser build without threads converts on the main thread: say
-		# so first, as the page stops responding until it is done.
-		status.text = "Converting… the page will not respond until this is done (under a minute)."
-		for i in 3: await get_tree().process_frame
-		var result: Dictionary = importer.run(path)
+		# A browser build without threads converts on the main thread in
+		# short slices, drawing a frame between them.
+		importer.tree = get_tree()
+		running = true
+		var result: Dictionary = await importer.run(path)
+		running = false
 		if path == WEB_JAR: DirAccess.remove_absolute(WEB_JAR)
 		_finish(result)
 		return
@@ -143,11 +147,11 @@ func import_file(path: String) -> void:
 	thread.start(importer.run.bind(path))
 
 func _process(_delta: float) -> void:
-	if thread == null: return
+	if thread == null and not running: return
 	var p := importer.progress()
 	bar.value = p.ratio * 100.0
 	status.text = p.message
-	if thread.is_alive(): return
+	if running or thread.is_alive(): return
 	var result: Dictionary = thread.wait_to_finish()
 	thread = null
 	if OS.has_feature("web") or OS.has_feature("android"): DirAccess.remove_absolute(WEB_JAR)
@@ -166,6 +170,7 @@ func _finish(result: Dictionary) -> void:
 	app.show_title()
 
 func _exit_tree() -> void:
+	if running: importer.cancelled = true
 	if thread != null:
 		importer.cancelled = true
 		thread.wait_to_finish()
