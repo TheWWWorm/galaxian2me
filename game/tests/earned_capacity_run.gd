@@ -184,7 +184,12 @@ func exchange_ship(offer: Dictionary) -> void:
 	press(item_row(dealer.list, app.catalogue.ship_name(int(offer.index))), "select affordable real hull")
 	await frames(3)
 	await shot("actual_affordable_ship_offer")
-	press(named_button(dealer.detail, app.library.text(144)), "confirm actual hull exchange")
+	press(named_button(dealer.detail, "Buy this ship"), "choose actual hull exchange")
+	await frames(2)
+	# The original's question, "Do you really want to buy this ship?", answered yes.
+	var asked: Array = dealer.find_children("*", "Control", true, false).filter(func(c): return c.get_script() == preload("res://src/presentation/ui.gd").Question and not c.is_queued_for_deletion())
+	check(asked.size() == 1, "the dealer asks before the exchange")
+	if asked.size() == 1: asked[0]._answer(true)
 	await frames(4)
 	var after := snapshot()
 	check(int(after.ship.index) == int(offer.index) and int(after.credits) == int(before.credits) + value - price,

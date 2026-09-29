@@ -83,6 +83,7 @@ static func phone_keys(app) -> String:
 		["5 / Fire / Select", "%s · left mouse button · RT" % k.call("fire")],
 		["'Left' and 'Right' in menus", "arrow keys · D-pad"],
 		["9: autopilot", "%s · Y" % k.call("autopilot")],
+		["Hold 9: autopilot list", "%s" % k.call("autopilot_menu")],
 		["7: auto fire", "%s" % k.call("auto_fire")],
 		["3: booster", "%s · A" % k.call("boost")],
 		["0: rear view / turret", "%s · right stick click" % k.call("rear_view")],

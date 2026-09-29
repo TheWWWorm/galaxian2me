@@ -72,8 +72,8 @@ static func fitted_counterpart(session, cat, id: int) -> int:
 		if first < 0 and (c == Catalogue.Category.PRIMARY or c == Catalogue.Category.TURRET): first = int(e.id)
 	return -1 if first == id else first
 
-## item_facts lines as label rows, each with its lead or shortfall against
-## `against` (an item id; -1 for none) in green or orange.
+## item_facts lines as table rows, each with its lead or shortfall against
+## `against` (an item id; -1 for none) in green or red.
 static func fact_rows(library, cat, id: int, against := -1) -> Array[Control]:
 	var theirs := {}
 	if against >= 0:
@@ -81,41 +81,94 @@ static func fact_rows(library, cat, id: int, against := -1) -> Array[Control]:
 			if f.size() > 2: theirs[f[2]] = int(f[3])
 	var out: Array[Control] = []
 	for f in item_facts(library, cat, id):
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 8)
-		row.add_child(UI.label("%s: %s" % [f[0], f[1]], 14))
 		if against >= 0 and f.size() > 2 and theirs.has(f[2]) and int(f[3]) != int(theirs[f[2]]):
 			var diff: int = int(f[3]) - int(theirs[f[2]])
 			var seconds: bool = f[1].ends_with(" s")
 			var amount: String = ("%.1f s" % (absi(diff) / 1000.0)) if seconds else str(absi(diff))
 			if f[1].ends_with("%"): amount += "%"
 			var better := (diff < 0) if LOWER_BETTER.has(f[2]) else (diff > 0)
-			row.add_child(UI.label(("+" if diff > 0 else "−") + amount, 14, UI.TEXT_GOOD if better else UI.TEXT_WARN))
-		out.append(row)
+			out.append(fact_line(f[0], f[1], ("+" if diff > 0 else "−") + amount, better))
+		else:
+			out.append(fact_line(f[0], f[1]))
 	return out
 
-## A selectable row: icon, name, right-aligned figures.
-static func row(icon: Control, text: String, right: String, on_press: Callable) -> Button:
+## One line of a figures table: the name, the value at the right, and an
+## optional difference after it (green when better, red when worse), over a
+## faint rule. Children: name, value[, difference].
+static func fact_line(name: String, value: String, delta := "", good := true) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	var n := UI.label(name, 15, UI.TEXT.darkened(0.12))
+	n.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(n)
+	var v := UI.label(value, 15)
+	v.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	v.custom_minimum_size.x = 64
+	row.add_child(v)
+	if not delta.is_empty():
+		var d := UI.label(delta, 15, UI.TEXT_GOOD if good else UI.TEXT_WARN)
+		d.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		d.custom_minimum_size.x = 64
+		row.add_child(d)
+	row.custom_minimum_size.y = 28
+	row.draw.connect(func(): row.draw_line(Vector2(0, row.size.y + 1), Vector2(row.size.x, row.size.y + 1), Color(UI.BORDER, 0.35), 1.0))
+	return row
+
+## The price line under a table: the word and the sum, both green.
+static func price_line(label: String, value: String) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	var l := UI.label(label, 18, UI.TEXT_GOOD)
+	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(l)
+	row.add_child(UI.label(value, 18, UI.TEXT_GOOD))
+	row.custom_minimum_size.y = 36
+	return row
+
+## The big action at the foot of an info panel (buy, sell), with its icon.
+static func action_button(text: String, icon: String, callback: Callable, enabled := true) -> Button:
+	var b := UI.icon_button(text, icon, callback, enabled)
+	b.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	b.custom_minimum_size.y = 52
+	b.add_theme_font_size_override("font_size", 18)
+	return b
+
+## A heading inside a list (a slot group, a section): accent capitals.
+static func heading(text: String) -> Label:
+	var l := UI.label(text.to_upper(), 14, UI.ACCENT)
+	l.custom_minimum_size.y = 30
+	l.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	return l
+
+## A selectable row: icon, name, right-aligned figures. It stays lit while
+## it is the chosen one (`chosen`, or the last one pressed in its list).
+static func row(icon: Control, text: String, right: String, on_press: Callable, chosen := false) -> Button:
 	var b := Button.new()
 	b.focus_mode = Control.FOCUS_ALL
-	b.custom_minimum_size.y = 38
-	b.pressed.connect(on_press)
+	b.toggle_mode = true
+	b.button_pressed = chosen
+	b.custom_minimum_size.y = 50
+	b.pressed.connect(func():
+		# Only one row of a list is lit.
+		for sib in b.get_parent().get_children():
+			if sib is Button and sib.toggle_mode: sib.set_pressed_no_signal(sib == b)
+		on_press.call())
 	var h := HBoxContainer.new()
 	h.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	h.offset_left = 6; h.offset_right = -8
+	h.offset_left = 8; h.offset_right = -12
 	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	h.add_theme_constant_override("separation", 10)
+	h.add_theme_constant_override("separation", 14)
 	b.add_child(h)
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	h.add_child(icon)
-	var l := UI.label(text, 15)
+	var l := UI.label(text, 16)
 	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	l.clip_text = true
 	l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	h.add_child(l)
-	var r := UI.label(right, 15, UI.TEXT_GOOD)
+	var r := UI.label(right, 16, UI.TEXT_GOOD)
 	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	r.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	h.add_child(r)
@@ -128,7 +181,7 @@ static func scroll_list() -> Array:
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	var list := VBoxContainer.new()
 	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	list.add_theme_constant_override("separation", 3)
+	list.add_theme_constant_override("separation", 6)
 	scroll.add_child(list)
 	return [scroll, list]
 

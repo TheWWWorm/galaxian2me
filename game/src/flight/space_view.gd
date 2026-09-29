@@ -146,7 +146,7 @@ func _present(delta: float) -> void:
 			if boosters != null:
 				# Out in scripted scenes and while the drill is in the rock.
 				boosters.visible = b.exhaust and not (b == space.player and space.mining != null)
-				Assembly.stretch_boosters(boosters, space.boost_flare() if b == space.player else 0.0)
+				Assembly.stretch_boosters(boosters, space.boost_flare() if b == space.player else 0.0, space.throttle / 100.0 if b == space.player else 1.0)
 		n.transform = t
 	for b in nodes.keys():
 		if not seen.has(b):
@@ -363,7 +363,7 @@ var trail_mesh: MeshInstance3D
 var trail_materials: Array = []
 
 func _trail_materials() -> Array:
-	var tex: Texture2D = library.texture("space")
+	var tex: Texture2D = library.atlas_texture("space")
 	var img: Image = tex.get_image() if tex != null else null
 	var out: Array = []
 	for kind in 2:
@@ -460,9 +460,10 @@ func _sync_trails() -> void:
 
 ## Shots nearer the camera than this (original units) are not drawn.
 const SHOT_NEAR := 700.0
+const SHOT_THIN := 5000.0
 
 func _sync_shots() -> void:
-	var shots: Array = space.projectiles
+	var shots: Array = space.projectiles + space.spent
 	while shot_nodes.size() < shots.size():
 		var holder := Node3D.new()
 		add_child(holder)
@@ -480,12 +481,37 @@ func _sync_shots() -> void:
 			var m: Node3D = Assembly.figure(library, model, 0) if not model.is_empty() else _default_shot()
 			node.add_child(m)
 			entry.model = model
+			# How far the bolt's streak trails behind its head (the bolt faces
+			# -z, so its tail is its furthest +z).
+			entry.tail = maxf(0.0, _furthest_z(m, m.transform))
 		# A bolt grazing the camera would sweep across the whole screen for
 		# a frame; it is gone by the next one anyway.
-		node.visible = camera.global_position.distance_to(p.pos * UNIT) > SHOT_NEAR * UNIT
+		var near := camera.global_position.distance_to(p.pos * UNIT) / UNIT
+		node.visible = near > SHOT_NEAR
+		# The bolt is a flat fan meant to be seen from afar; passing close to
+		# the camera it would fill the view as a wide flat band, so it thins
+		# to a streak on the way in.
+		var width := clampf((near - SHOT_NEAR) / SHOT_THIN, 0.2, 1.0)
 		var dir: Vector3 = (p.vel as Vector3).normalized()
 		var up := Vector3.UP if absf(dir.y) < 0.95 else Vector3.RIGHT
-		node.global_transform = Transform3D(Basis.looking_at(dir, up), p.pos * UNIT)
+		# A fresh bolt's streak would reach back through the ship that fired
+		# it: it grows out of the muzzle instead.
+		var length := 1.0
+		var tail: float = entry.get("tail", 0.0)
+		if tail > 0.0 and p.has("muzzle"):
+			var out := ((p.pos as Vector3) - (p.muzzle as Vector3)).dot(dir) * UNIT
+			length = clampf(out / tail, 0.02, 1.0)
+		node.global_transform = Transform3D(Basis.looking_at(dir, up) * Basis.from_scale(Vector3(width, width, length)), p.pos * UNIT)
+
+## The largest z any mesh under `node` reaches, in its parent's space.
+static func _furthest_z(node: Node, to_parent: Transform3D) -> float:
+	var most := 0.0
+	if node is MeshInstance3D and (node as MeshInstance3D).mesh != null:
+		var box: AABB = to_parent * (node as MeshInstance3D).mesh.get_aabb()
+		most = box.end.z
+	for c in node.get_children():
+		if c is Node3D: most = maxf(most, _furthest_z(c, to_parent * (c as Node3D).transform))
+	return most
 
 func _default_shot() -> Node3D:
 	var m := MeshInstance3D.new()
@@ -526,7 +552,7 @@ func _sync_effects(_delta: float) -> void:
 				node.scale = Vector3.ONE * maxf(0.01, float(e.radius) * UNIT * k)
 				(node as MeshInstance3D).transparency = k
 			"spark":
-				node.scale = Vector3.ONE * (1.0 - k)
+				_spark_frame(node, float(e.time))
 	for e in effect_nodes.keys():
 		if not alive.has(e):
 			effect_nodes[e].queue_free()
@@ -586,6 +612,8 @@ func _effect_node(e: Dictionary) -> Node3D:
 			s.material = mat
 			m.mesh = s
 			return m
+		"spark":
+			return _spark_node()
 	var q := MeshInstance3D.new()
 	var quad := QuadMesh.new()
 	quad.size = Vector2(1.5, 1.5)
@@ -598,6 +626,66 @@ func _effect_node(e: Dictionary) -> Node3D:
 	quad.material = qm
 	q.mesh = quad
 	return q
+
+## Level's gun sparks: ten fire sprites from the space atlas, scattered a
+## quarter of their full size about the hit, each swelling to 500 units over
+## its own ~0.7 s and then fading.
+const SPARK_REGION := Rect2i(33, 225, 30, 30)
+const SPARK_COUNT := 10
+const SPARK_SIZE := 500.0
+var spark_material: StandardMaterial3D
+
+func _spark_node() -> Node3D:
+	if spark_material == null:
+		spark_material = StandardMaterial3D.new()
+		spark_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		spark_material.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		spark_material.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+		spark_material.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+		spark_material.billboard_keep_scale = true
+		spark_material.vertex_color_use_as_albedo = true
+		var tex: Texture2D = library.atlas_texture("space")
+		var img: Image = tex.get_image() if tex != null else null
+		if img != null and Rect2i(Vector2i.ZERO, img.get_size()).encloses(SPARK_REGION):
+			var part := img.get_region(SPARK_REGION)
+			part.convert(Image.FORMAT_RGBA8)
+			# Additive: let transparent texels add nothing.
+			for y in part.get_height():
+				for x in part.get_width():
+					var c := part.get_pixel(x, y)
+					part.set_pixel(x, y, Color(c.r * c.a, c.g * c.a, c.b * c.a, 1.0))
+			spark_material.albedo_texture = ImageTexture.create_from_image(part)
+		else:
+			spark_material.albedo_color = Color(1.0, 0.6, 0.25)
+	var quad := QuadMesh.new()
+	quad.size = Vector2.ONE
+	quad.material = spark_material
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = true
+	mm.mesh = quad
+	mm.instance_count = SPARK_COUNT
+	var node := MultiMeshInstance3D.new()
+	node.multimesh = mm
+	node.extra_cull_margin = SPARK_SIZE * UNIT
+	var spread := SPARK_SIZE * UNIT / 4.0
+	var bits: Array = []
+	for i in SPARK_COUNT:
+		bits.append([Vector3(randf_range(-spread, spread), randf_range(-spread, spread), randf_range(-spread, spread)),
+			space.SPARK_GROW + randf_range(-0.05, 0.05)])
+	node.set_meta("bits", bits)
+	_spark_frame(node, 0.0)
+	return node
+
+func _spark_frame(node: Node3D, time: float) -> void:
+	var mm: MultiMesh = (node as MultiMeshInstance3D).multimesh
+	var bits: Array = node.get_meta("bits")
+	for i in bits.size():
+		var grow: float = bits[i][1]
+		var size := SPARK_SIZE * UNIT * minf(1.0, time / grow)
+		var fade := 1.0 - clampf((time - grow) / space.SPARK_FADE, 0.0, 1.0)
+		mm.set_instance_transform(i, Transform3D(Basis.from_scale(Vector3.ONE * maxf(size, 0.001)), bits[i][0]))
+		mm.set_instance_color(i, Color(fade, fade, fade, 1.0))
 
 ## Poses a skinned model at one frame of its first action.
 func _set_frame(node: MeshInstance3D, anim: Dictionary, frame: int) -> void:
@@ -629,6 +717,11 @@ func _make_dust() -> void:
 	mat.albedo_color = Color(0.75, 0.8, 0.9, 0.7)
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	# A speck drifting past the lens would fill the screen as a grey square:
+	# nearby ones fade out before they get that close.
+	mat.distance_fade_mode = BaseMaterial3D.DISTANCE_FADE_PIXEL_ALPHA
+	mat.distance_fade_min_distance = 4.0
+	mat.distance_fade_max_distance = 12.0
 	quad.material = mat
 	mm.mesh = quad
 	mm.instance_count = 160

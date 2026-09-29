@@ -47,7 +47,7 @@ func run() -> void:
 	check(st.content.offset_left < 20, "upright: the page takes the full width")
 	st.size = Vector2(1280, 800)
 	await process_frame
-	check(st.rail.visible and not st.back_button.visible, "wide again: the rail returns")
+	check(st.rail.visible and st.back_button.visible and st.back_button.text == "✕", "wide again: the rail returns, with a close box for the page")
 	check(not shop.vertical and shop.get_children().map(func(c): return c.custom_minimum_size.x) == widths, "wide again: the columns and their widths come back")
 	st.size = Vector2(800, 1280)
 	await process_frame

@@ -345,7 +345,8 @@ func accept(person: Dictionary) -> String:
 				s.flags["passengers"] = int(job.count)
 			person.erase("job")
 			person.kind = Kind.TALK
-			person.speech = lib.text(498)
+			# "See you outside, Mr. Maxwell."
+			person.speech = lib.text(493)
 			return ""
 		Kind.SELLER, Kind.ITEM_AGENT:
 			if s.credits < int(person.price): return lib.text(83).replace("#C", _money(int(person.price) - s.credits))

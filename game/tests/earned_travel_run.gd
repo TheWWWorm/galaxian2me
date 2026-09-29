@@ -42,6 +42,34 @@ func press(button: Button, label: String) -> bool:
 	button.pressed.emit()
 	return true
 
+## Picks station `sid` on the real Map as a player does: a click on its
+## system on the chart (leaving another open system first), then one on its
+## planet. Returns the planet card's departure button.
+func map_station(map, sid: int) -> Button:
+	var system_id: int = app.catalogue.system_of_station(sid)
+	if map.system_view != system_id:
+		if map.system_view >= 0: map.close_system()
+		map_click(map, map._to_screen(map.canvas, app.catalogue.system(system_id)))
+		await frames(3)
+	for o in map._orbit_layout(system_id):
+		if int(o.station) == sid: map_click(map, map._planet_point(map.canvas, o))
+	await frames(2)
+	return card_button(map.side, sid)
+
+func map_click(map, at: Vector2) -> void:
+	for down in [true, false]:
+		var e := InputEventMouseButton.new()
+		e.button_index = MOUSE_BUTTON_LEFT; e.pressed = down; e.position = at
+		map.canvas._gui_input(e)
+
+func card_button(node: Node, sid: int) -> Button:
+	for child in node.get_children():
+		if child.is_queued_for_deletion(): continue
+		if child is Button and int(child.get_meta("station", -1)) == sid: return child
+		var found := card_button(child, sid)
+		if found != null: return found
+	return null
+
 func named_button(node: Node, text: String) -> Button:
 	for child in node.get_children():
 		if child.is_queued_for_deletion(): continue
@@ -586,18 +614,10 @@ func choose_destination(sid: int) -> bool:
 	if map == null:
 		check(false, "Map is unlocked after the combat tutorial")
 		return false
-	var system_id: int = app.catalogue.system_of_station(sid)
-	if system_id != map.selected_system:
-		check(map._known(system_id), "campaign destination system is visible on the real Map")
-		if not map._known(system_id): return false
-		var click := InputEventMouseButton.new()
-		click.button_index = MOUSE_BUTTON_LEFT
-		click.pressed = true
-		click.position = map._to_screen(map.canvas, app.catalogue.system(system_id))
-		map.canvas._gui_input(click)
-		await frames(3)
-		check(map.selected_system == system_id, "Map pointer selects the destination system")
-	if not press(named_button(map.side, app.catalogue.station_name(sid)), "choose destination on Map"): return false
+	check(map._known(app.catalogue.system_of_station(sid)), "campaign destination system is visible on the real Map")
+	if not map._known(app.catalogue.system_of_station(sid)): return false
+	var card: Button = await map_station(map, sid)
+	if not press(card, "choose destination on Map"): return false
 	await frames(2)
 	await shot("map_to_%d" % sid)
 	if not press(named_button(map.side, app.library.text(38)), "confirm departure"): return false

@@ -83,8 +83,7 @@ func _run() -> void:
 		await click_button(app.screen.menu.get_child(2), "Map with the retained hired crew")
 		var map = app.screen.current_panel
 		var before := snapshot()
-		await pointer_at(map.canvas.get_global_transform_with_canvas() * map._to_screen(map.canvas, app.catalogue.system(chosen_system)))
-		await click_button(named_button(map.side, app.catalogue.station_name(chosen_station)), "select actual Augmenta destination")
+		await click_button(await map_station(map, chosen_station), "select actual Augmenta destination")
 		check(snapshot() == before and app.screen is Station, "Map selection alone neither spends crew time nor travels")
 		await click_button(named_button(map.side, app.library.text(38)), "confirm crew's native station drive")
 		if failures == 0:

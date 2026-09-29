@@ -12,6 +12,8 @@ const Navigation := preload("res://src/simulation/navigation.gd")
 const JavaRandom := preload("res://src/simulation/java_random.gd")
 const Assembly := preload("res://src/presentation/assembly.gd")
 ## The original's planet sizes on its system map, by planet picture.
+## The original's orange for the chosen entry.
+const CHOSEN := Color8(0xff, 0x9a, 0x2e)
 const PLANET_SIZES := [320, 192, 256, 256, 192, 256, 192, 192, 320, 256, 192, 192, 320, 256, 320, 256, 256, 256, 320, 192]
 
 var station
@@ -153,9 +155,17 @@ func _ready() -> void:
 		portal_view.library = app.library
 		add_child(portal_view)
 	_fill_side()
+	# The map opens on the system you are in; choosing a jump gate's
+	# destination opens on the galaxy.
+	if flight_mode != "gate" and _known(game.session.system_index):
+		open_system.call_deferred(game.session.system_index)
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if portal_view != null and canvas != null: canvas.queue_redraw()
+	# The system view's camera eases over to the chosen planet.
+	if system_view >= 0 and canvas != null and eye.distance_to(eye_goal) > 1.0:
+		eye = eye.lerp(eye_goal, 1.0 - pow(0.002, delta))
+		canvas.queue_redraw()
 
 ## Main/r's post-report warning follows the saved g/h address, not the
 ## current mission destination. Reject missing, cleared or mismatched pairs.
@@ -216,6 +226,9 @@ const MAX_ZOOM := 4.0
 
 ## Zooms keeping the point under `at` where it is.
 func zoom_at(c: Control, at: Vector2, factor: float) -> void:
+	if system_view >= 0:
+		_zoom_system(c, factor)
+		return
 	var z := clampf(zoom * factor, 1.0, MAX_ZOOM)
 	var centre := _map_rect(c).get_center()
 	pan = (at - centre) - (at - centre - pan) * (z / zoom)
@@ -223,6 +236,9 @@ func zoom_at(c: Control, at: Vector2, factor: float) -> void:
 	_clamp_pan(c)
 
 func pan_by(c: Control, delta: Vector2) -> void:
+	if system_view >= 0:
+		_pan_system(c, delta)
+		return
 	pan += delta
 	_clamp_pan(c)
 
@@ -395,10 +411,8 @@ func _pick(c: Control, at: Vector2) -> void:
 		if not _known(i): continue
 		var d := at.distance_to(_to_screen(c, app.catalogue.system(i)))
 		if d < best_d: best_d = d; best = i
-	if best >= 0:
-		selected_system = best
-		canvas.queue_redraw()
-		_fill_side()
+	# One click opens the system's planets.
+	if best >= 0: open_system(best)
 
 ## Moves the selection to the nearest known system roughly in `dir`.
 func _step_selection(c: Control, dir: Vector2) -> void:
@@ -442,6 +456,7 @@ func _fill_side() -> void:
 	if selected_system != game.session.system_index:
 		side.add_child(UI.label("%.0f km" % cat.travel_distance(game.session.system_index, selected_system), 14, UI.TEXT_DIM))
 	# The original's softkeys: Zoom into the chosen system, Back out of it.
+	# In a system its planets are chosen on the map itself, not listed here.
 	if system_view < 0:
 		side.add_child(UI.button(app.library.text(221), func(): open_system(selected_system)))
 	else:
@@ -459,26 +474,36 @@ func _fill_side() -> void:
 		side.add_child(UI.paragraph(app.library.text(241), 14, UI.TEXT_WARN))
 	if int(warning.get("system", -1)) == selected_system:
 		side.add_child(UI.paragraph("%s: %s" % [app.library.text(269), cat.station_name(int(warning.station))], 14, UI.TEXT_WARN))
-	for sid in sys.get("stations", []):
-		var st: Dictionary = cat.station(int(sid))
-		var label := "%s  (%s %d)" % [st.get("name", "?"), app.library.text(37), int(st.get("tech", 0))]
-		if int(sid) == game.session.station_id: label += "  ◄"
-		var b := UI.button(label, _choose.bind(int(sid)), reachable and int(sid) != game.session.station_id)
-		b.focus_entered.connect(_show_station.bind(int(sid)))
-		b.mouse_entered.connect(_show_station.bind(int(sid)))
-		var row := HBoxContainer.new()
-		row.add_child(b)
-		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		if int(story.get("station", -1)) == int(sid):
-			row.add_child(_marker(app.library.texture("menu_map_mainmission"), 24))
-			b.set_meta("story_station", int(sid))
-		if int(warning.get("station", -1)) == int(sid) and portal_view != null:
-			row.add_child(_marker(portal_view.get_texture(), 24))
-			b.set_meta("wormhole_station", int(sid))
-		side.add_child(row)
-	var shown: Array = sys.get("stations", [])
-	if not shown.is_empty():
-		_show_station(game.session.station_id if shown.has(float(game.session.station_id)) or shown.has(game.session.station_id) else int(shown[0]))
+	# In a system the planets are chosen on the map itself; the card shows
+	# the chosen one and flies there.
+	if system_view >= 0:
+		var stations: Array = sys.get("stations", [])
+		if planet >= 0 and planet < stations.size():
+			var sid := int(stations[planet])
+			var st: Dictionary = cat.station(sid)
+			side.add_child(HSeparator.new())
+			var head := HBoxContainer.new()
+			var title := UI.label(str(st.get("name", "?")), 18, CHOSEN)
+			title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			head.add_child(title)
+			if int(story.get("station", -1)) == sid:
+				head.add_child(_marker(app.library.texture("menu_map_mainmission"), 24))
+				title.set_meta("story_station", sid)
+			if int(warning.get("station", -1)) == sid and portal_view != null:
+				head.add_child(_marker(portal_view.get_texture(), 24))
+				title.set_meta("wormhole_station", sid)
+			side.add_child(head)
+			side.add_child(UI.label("%s: %d" % [app.library.text(37), int(st.get("tech", 0))], 14, UI.TEXT_DIM))
+			if sid == game.session.station_id:
+				side.add_child(UI.label("◄ You are here", 14, UI.TEXT_DIM))
+			else:
+				var verb: String = "Fly to" if flight != null else app.library.text(239) + " →"
+				var go := UI.button("%s %s" % [verb, st.get("name", "?")], _choose.bind(sid), reachable)
+				go.set_meta("station", sid)
+				for key in ["story_station", "wormhole_station"]:
+					if title.has_meta(key): go.set_meta(key, sid)
+				side.add_child(go)
+			_show_station(sid)
 	side.add_child(HSeparator.new())
 	if flight != null:
 		side.add_child(UI.button("Back to flight", flight.close_navigation))
@@ -553,6 +578,9 @@ func open_system(i: int) -> void:
 	var stations: Array = app.catalogue.system(i).get("stations", [])
 	planet = maxi(stations.find(float(game.session.station_id)), stations.find(game.session.station_id))
 	planet = maxi(planet, 0)
+	sys_focus = Vector3.ZERO
+	sys_distance = -1.0
+	_aim_eye(true)
 	frame.title = "%s: %s %s" % [app.library.text(72), app.catalogue.system(i).name, app.library.text(41)]
 	frame.queue_redraw()
 	canvas.queue_redraw()
@@ -586,91 +614,188 @@ func _orbit_layout(i: int) -> Array:
 	_orbits[i] = out
 	return out
 
-## Screen scale and centre of the system view.
-func _system_frame(c: Control) -> Array:
-	var layout := _orbit_layout(system_view)
-	var reach := 1000.0
-	for o in layout: reach = maxf(reach, float(o.radius) + 300.0)
-	var scale := minf(c.size.x * 0.46, c.size.y * 0.46 / TILT) / reach
-	return [c.size / 2.0, scale]
+# ------------------------------------------------------------ system view
+# The original builds this view in 3D (StarMap.initStarSysMap): the planets
+# on their orbits in one plane, the plane turned a sixteenth of a turn about
+# two axes, and a camera with a 44° view held 4000 units in front of the
+# chosen planet, easing over when the choice changes. The sun is a flat
+# sprite over the system's colour. This draws the same arrangement with a
+# perspective projection.
 
-## How flat the orbits look: the original views its system from above at a slant.
-const TILT := 0.45
+## The orbit plane's slant: a sixteenth of a turn about x and about z.
+const PLANE_TURN := 22.5
+const VIEW_ANGLE := 44.0
+const VIEW_DISTANCE := 4000.0
+
+var eye := Vector3.ZERO
+var eye_goal := Vector3.ZERO
+## A remake addition: the view first frames the whole system (the original's
+## camera sat close in front of one planet) and can be dragged and zoomed.
+var sys_focus := Vector3.ZERO
+var sys_distance := -1.0
+const SYS_NEAREST := 1500.0
+
+static func _plane() -> Basis:
+	return Basis(Vector3(0, 0, 1), deg_to_rad(PLANE_TURN)) * Basis(Vector3(1, 0, 0), deg_to_rad(-PLANE_TURN))
+
+## Where an orbit position lies in the view's space.
+static func _orbit_point(angle: float, radius: float) -> Vector3:
+	return _plane() * Vector3(sin(angle) * radius, 0.0, cos(angle) * radius)
+
+func _planet_world(o: Dictionary) -> Vector3:
+	return _orbit_point(float(o.angle), float(o.radius))
+
+## The camera's place for the chosen planet: straight in front of it.
+func _aim_eye(snap: bool) -> void:
+	if sys_distance < 0.0: sys_distance = _fit_distance()
+	eye_goal = sys_focus + Vector3(0, 0, -sys_distance)
+	if snap: eye = eye_goal
+
+## How far back the camera stands to show every orbit.
+func _fit_distance() -> float:
+	var reach := 0.0
+	for o in _orbit_layout(system_view): reach = maxf(reach, float(o.radius))
+	if reach <= 0.0 or canvas == null or canvas.size.x <= 0.0: return VIEW_DISTANCE
+	var fit := minf(canvas.size.x, canvas.size.y) * 0.42
+	return maxf(VIEW_DISTANCE, reach * _focal(canvas) / fit + reach * 0.4)
+
+func _zoom_system(c: Control, factor: float) -> void:
+	var far := _fit_distance() * 1.6
+	sys_distance = clampf(sys_distance / factor, SYS_NEAREST, far)
+	_aim_eye(false)
+	c.queue_redraw()
+
+## A drag moves the system with the pointer.
+func _pan_system(c: Control, delta: Vector2) -> void:
+	var per_px := sys_distance / _focal(c)
+	var reach := _fit_distance()
+	sys_focus += Vector3(delta.x, delta.y, 0.0) * per_px
+	sys_focus = Vector3(clampf(sys_focus.x, -reach, reach), clampf(sys_focus.y, -reach, reach), 0.0)
+	_aim_eye(true)
+	c.queue_redraw()
+
+func _focal(c: Control) -> float:
+	return (c.size.x / 2.0) / tan(deg_to_rad(VIEW_ANGLE / 2.0))
+
+## Screen position and depth of a point (the camera looks along +z, so its
+## right is −x); depth ≤ 0 means behind the camera.
+func _project(c: Control, p: Vector3) -> Vector3:
+	var d := p - eye
+	if d.z < 60.0: return Vector3(0, 0, -1)
+	var f := _focal(c)
+	return Vector3(c.size.x / 2.0 - d.x * f / d.z, c.size.y / 2.0 - d.y * f / d.z, d.z)
 
 func _planet_point(c: Control, o: Dictionary) -> Vector2:
-	var f := _system_frame(c)
-	return (f[0] as Vector2) + Vector2(sin(float(o.angle)), cos(float(o.angle)) * TILT) * float(o.radius) * float(f[1])
+	var s := _project(c, _planet_world(o))
+	return Vector2(s.x, s.y)
 
 func _draw_system(c: Control) -> void:
 	var cat = app.catalogue
 	var lib = app.library
 	var sys: Dictionary = cat.system(system_view)
 	var tint: Array = sys.get("color", [])
+	# The system's own colour behind everything, as the original fills it.
 	c.draw_rect(Rect2(Vector2.ZERO, c.size), Color8(int(tint[0]), int(tint[1]), int(tint[2])) if tint.size() >= 3 else Color.BLACK)
-	var f := _system_frame(c)
-	var centre: Vector2 = f[0]
-	var scale: float = f[1]
+	# Faint points of light in the star's own colour scattered behind the
+	# system, the same places for each visit.
+	var speck := _star_sprite(int(sys.get("star", 0)))
+	if speck != null:
+		var r := JavaRandom.new(system_view * 1000 + 7)
+		var count := int(clampf(c.size.x * c.size.y / 22000.0, 12, 40))
+		for k in count:
+			var p := Vector2(r.next_int(10000) / 10000.0 * c.size.x, r.next_int(10000) / 10000.0 * c.size.y)
+			var s := c.size.x * (0.016 + r.next_int(10) / 1000.0)
+			c.draw_texture_rect(speck, Rect2(p - Vector2(s, s), Vector2(s, s) * 2.0), false, Color(1, 1, 1, 0.55 + r.next_int(40) / 100.0))
+	var f := _focal(c)
+	var layout := _orbit_layout(system_view)
+	# The orbits: thin dashed rings in the slanted plane.
+	for o in layout:
+		var r := float(o.radius)
+		var steps := 120
+		var last := _project(c, _orbit_point(0.0, r))
+		for k in range(1, steps + 1):
+			var now := _project(c, _orbit_point(TAU * k / steps, r))
+			if k % 2 == 0 and last.z > 0.0 and now.z > 0.0:
+				c.draw_line(Vector2(last.x, last.y), Vector2(now.x, now.y), Color(0.62, 0.68, 0.78, 0.55), 1.5, true)
+			last = now
 	# The sun: the original paints its quarter picture four times, mirrored.
+	# It is drawn in depth order with the planets, so those beyond it are
+	# covered by its glow.
+	var sun_at := _project(c, Vector3.ZERO)
 	var sun: Texture2D = lib.texture("sun_%d" % int(sys.get("star", 0)))
-	if sun != null:
-		var q := sun.get_size() * 2.0
+	var draw_sun := func() -> void:
+		if sun == null or sun_at.z <= 0.0: return
+		var centre := Vector2(sun_at.x, sun_at.y)
+		var q := sun.get_size() * (c.size.x / 260.0) * clampf(VIEW_DISTANCE / sun_at.z, 0.5, 1.6)
 		for m in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]:
 			c.draw_set_transform(centre, 0.0, m)
 			c.draw_texture_rect(sun, Rect2(-q, q), false)
 		c.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-	var layout := _orbit_layout(system_view)
-	for o in layout:
-		var r := float(o.radius) * scale
-		var dots := int(clampf(r / 5.0, 24, 160))
-		for k in dots:
-			var a := TAU * k / dots
-			c.draw_circle(centre + Vector2(sin(a), cos(a) * TILT) * r, 1.2, Color(0.75, 0.82, 0.9, 0.55))
+	var sun_drawn := false
 	var font := c.get_theme_default_font()
 	var story := story_address()
 	var warning := wormhole_address()
 	var job_station := int(game.session.job.get("station", -2)) if not game.session.job.is_empty() else -2
-	# Back to front, so nearer planets cover those behind.
+	# Far to near, so nearer planets cover those behind.
 	var order := range(layout.size())
-	order.sort_custom(func(a, b): return cos(float(layout[a].angle)) < cos(float(layout[b].angle)))
+	var depth := func(n): return (_planet_world(layout[n]) - eye).z
+	order.sort_custom(func(a, b): return depth.call(a) > depth.call(b))
+	var labels: Array = []
 	for n in order:
 		var o: Dictionary = layout[n]
-		var at := _planet_point(c, o)
+		var s := _project(c, _planet_world(o))
+		if s.z <= 0.0: continue
+		if not sun_drawn and s.z < sun_at.z:
+			draw_sun.call()
+			sun_drawn = true
+		var at := Vector2(s.x, s.y)
 		var sid := int(o.station)
 		var st: Dictionary = cat.station(sid)
 		var picture := int(st.get("planet", 0))
 		var tex: Texture2D = lib.texture("planet_%d" % picture)
-		var d := float(PLANET_SIZES[picture % PLANET_SIZES.size()]) / 320.0 * clampf(c.size.y * 0.09, 22.0, 64.0)
+		# The planet's size in the scene, seen at its distance.
+		var d := float(PLANET_SIZES[picture % PLANET_SIZES.size()]) * 1.2 * f / s.z
 		if tex != null: c.draw_texture_rect(tex, Rect2(at - Vector2(d, d) / 2.0, Vector2(d, d)), false)
 		else: c.draw_circle(at, d / 2.0, UI.TEXT_DIM)
+		labels.append([n, at, d, sid, st])
+	if not sun_drawn: draw_sun.call()
+	# Names last, over every planet.
+	for entry in labels:
+		var n: int = entry[0]
+		var at: Vector2 = entry[1]
+		var d: float = entry[2]
+		var sid: int = entry[3]
+		var st: Dictionary = entry[4]
 		if sid == game.session.station_id:
-			# Your ship's marker over the station you are at.
-			var tip := at + Vector2(0, -d / 2.0 - 4)
-			c.draw_colored_polygon(PackedVector2Array([tip, tip + Vector2(-7, -12), tip + Vector2(7, -12)]), UI.TEXT_GOOD)
+			# The original's red arrow beside the planet you are docked at.
+			var tip := at + Vector2(-d / 2.0 - 4, 0)
+			c.draw_colored_polygon(PackedVector2Array([tip, tip + Vector2(-16, -9), tip + Vector2(-11, 0), tip + Vector2(-16, 9)]), Color8(0xe0, 0x3a, 0x22))
 		var chosen: bool = n == planet
 		var visited: bool = game.session.visited_stations.has(str(sid)) or game.session.visited_stations.has(sid)
-		var col: Color = station.ORANGE if chosen and station != null else (Color(1.0, 0.6, 0.18) if chosen else (UI.TEXT if visited else UI.TEXT_DIM))
-		var x := at.x + d / 2.0 + 6
-		var y := at.y - 2
+		var col: Color = CHOSEN if chosen else (UI.TEXT if visited else UI.TEXT_DIM)
+		var x := at.x + d / 2.0 + 8
+		var y := at.y + 4
 		var name := str(st.get("name", "?"))
-		c.draw_string_outline(font, Vector2(x, y), name, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, 4, Color.BLACK)
-		c.draw_string(font, Vector2(x, y), name, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, col)
+		var size := 18 if chosen else 16
+		c.draw_string_outline(font, Vector2(x, y), name, HORIZONTAL_ALIGNMENT_LEFT, -1, size, 4, Color.BLACK)
+		c.draw_string(font, Vector2(x, y), name, HORIZONTAL_ALIGNMENT_LEFT, -1, size, col)
 		# The original's markers after the name: visited, story, job, gate.
 		var icons: Array = []
 		if visited: icons.append("menu_map_visited")
 		if int(story.get("station", -1)) == sid or int(warning.get("station", -1)) == sid: icons.append("menu_map_mainmission")
 		if job_station == sid: icons.append("menu_map_sidemission")
 		if int(sys.get("jumpgate_station", -1)) == sid: icons.append("menu_map_jumpgate")
-		var ix := x + font.get_string_size(name, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x + 6
+		var ix := x + font.get_string_size(name, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x + 8
 		for icon in icons:
 			var t: Texture2D = lib.texture(icon)
 			if t == null: continue
-			var sz := t.get_size() * 1.5
-			c.draw_texture_rect(t, Rect2(Vector2(ix, y - sz.y + 2), sz), false)
-			ix += sz.x + 3
+			var sz := t.get_size() * 2.0
+			c.draw_texture_rect(t, Rect2(Vector2(ix, y - sz.y + 3), sz), false)
+			ix += sz.x + 4
 		if chosen:
 			var tech := "%s: %d" % [lib.text(37), int(st.get("tech", 0))]
-			c.draw_string_outline(font, Vector2(x, y + 18), tech, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, 4, Color.BLACK)
-			c.draw_string(font, Vector2(x, y + 18), tech, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, UI.TEXT if visited else UI.TEXT_DIM)
+			c.draw_string_outline(font, Vector2(x, y + 22), tech, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, 4, Color.BLACK)
+			c.draw_string(font, Vector2(x, y + 22), tech, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, UI.TEXT)
 
 func _pick_planet(c: Control, at: Vector2) -> void:
 	var layout := _orbit_layout(system_view)
@@ -697,6 +822,12 @@ func _step_planet(c: Control, dir: Vector2) -> void:
 
 func _set_planet(n: int) -> void:
 	planet = n
+	# The camera follows only when the choice would be out of sight.
+	var layout0 := _orbit_layout(system_view)
+	var seen := _project(canvas, _planet_world(layout0[n]))
+	if seen.z <= 0.0 or not Rect2(Vector2.ZERO, canvas.size).grow(-60).has_point(Vector2(seen.x, seen.y)):
+		var w := _planet_world(layout0[n])
+		sys_focus = Vector3(w.x, w.y, 0.0)
+	_aim_eye(false)
 	canvas.queue_redraw()
-	var layout := _orbit_layout(system_view)
-	_show_station(int(layout[n].station))
+	_fill_side()

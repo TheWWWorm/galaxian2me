@@ -130,7 +130,12 @@ func _run() -> void:
 		check(not bool(controls.state(null).get(action, false)), "short tap is consumed once: " + action)
 		if action == "fire": check(state.fire_pressed, "short fire tap activates locked objects")
 
-	finger(1, point("auto_fire"))
+	# Automatic fire is a quick double tap on fire, as in the iOS release.
+	check(not touch.buttons.has("auto_fire"), "no separate auto fire button")
+	finger(1, point("fire"))
+	finger(1, Vector2.ZERO, false)
+	controls.state(null)
+	finger(1, point("fire"))
 	finger(1, Vector2.ZERO, false)
 	check(controls.state(null).auto_fire, "touch auto fire toggle")
 	check(controls.state(null).auto_fire, "auto fire toggle is not repeated")
@@ -213,9 +218,9 @@ func _run() -> void:
 		e.position = pos
 		return editor._edit(e)
 	check(press.call(boost_before.get_center(), true), "editing picks up a button")
-	move.call(boost_before.get_center() + Vector2(-300, -100))
-	press.call(boost_before.get_center() + Vector2(-300, -100), false)
-	check(editor.buttons.boost.position.distance_to(boost_before.position + Vector2(-300, -100)) < 1.0, "a dragged button moves with the pointer")
+	move.call(boost_before.get_center() + Vector2(300, -100))
+	press.call(boost_before.get_center() + Vector2(300, -100), false)
+	check(editor.buttons.boost.position.distance_to(boost_before.position + Vector2(300, -100)) < 1.0, "a dragged button moves with the pointer")
 	press.call(stick_before, true)
 	move.call(stick_before + Vector2(120, -60))
 	press.call(stick_before + Vector2(120, -60), false)

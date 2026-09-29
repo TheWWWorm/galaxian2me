@@ -175,13 +175,7 @@ func open_normal_drive_map() -> bool:
 	return failures == 0
 
 func pick_station(map) -> void:
-	var click := InputEventMouseButton.new()
-	click.button_index = MOUSE_BUTTON_LEFT; click.pressed = true
-	click.position = map._to_screen(map.canvas, app.catalogue.system(chosen_system))
-	map.canvas._gui_input(click)
-	await frames(3)
-	check(map.selected_system == chosen_system, "native map pointer selects the supplied non-linked system")
-	press(named_button(map.side, app.catalogue.station_name(chosen_station)), "choose actual destination station")
+	press(await map_station(map, chosen_station), "choose actual destination station")
 	await frames(2)
 
 func drive_flight() -> void:

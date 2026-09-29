@@ -14,10 +14,17 @@ func check(ok: bool, text: String) -> void:
 func button(node: Node, prefix: String) -> Button:
 	for child in node.get_children():
 		if child.is_queued_for_deletion(): continue
-		if child is Button and child.text.begins_with(prefix): return child
+		if child is Button and prefix in child.text: return child
 		var found := button(child, prefix)
 		if found != null: return found
 	return null
+## Where station `sid` sits in system `sys`'s planet order.
+func planet_index(app, sys: int, sid: int) -> int:
+	var stations: Array = app.catalogue.system(sys).get("stations", [])
+	for i in stations.size():
+		if int(stations[i]) == sid: return i
+	return 0
+
 func run() -> void:
 	var app := Host.new()
 	root.add_child(app)
@@ -45,17 +52,17 @@ func run() -> void:
 		var layer: Dictionary = map.portal_view.portal.layers[0]
 		check(int(layer.interval) == 30 and layer.action.poses.size() > 1, "marker uses the supplied action with the original thirty-ms frame interval")
 		check(map.portal_view.own_world_3d and map.portal_view.transparent_bg, "marker lives in an isolated transparent rendering world")
-		map.selected_system = 18
-		map._fill_side()
+		map.open_system(18)
+		map._set_planet(planet_index(app, 18, 91))
 		await process_frame
 		var dima := button(map.side, app.catalogue.station_name(91))
-		check(dima != null and dima.has_meta("wormhole_station") and dima.disabled, "system view marks Dima without enabling unreachable travel")
+		check(dima != null and dima.has_meta("wormhole_station") and dima.disabled, "Dima's card marks the portal without enabling unreachable travel")
 		check(dima != null and not dima.has_meta("story_station"), "mission32 destination and portal station stay distinct")
-		map.selected_system = 6
-		map._fill_side()
+		map.open_system(6)
+		map._set_planet(planet_index(app, 6, 10))
 		await process_frame
 		var thynome := button(map.side, app.catalogue.station_name(10))
-		check(thynome != null and thynome.has_meta("story_station") and not thynome.has_meta("wormhole_station"), "Thynome row retains the actual mission marker")
+		check(thynome != null and thynome.has_meta("story_station") and not thynome.has_meta("wormhole_station"), "Thynome's card retains the actual mission marker")
 		check(JSON.stringify(game.session.to_dict()) == before, "opening and selecting map views changes no gameplay state")
 		game.session.story_step = 31
 		check(map.wormhole_address().is_empty(), "warning is absent before the earned report boundary")

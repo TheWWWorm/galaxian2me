@@ -55,8 +55,10 @@ var probe_position := Vector3.ZERO
 var probe_basis := Basis.IDENTITY
 var probe_started_at := -1
 const PROBE_SCAN_MS := 180000
-## The original's quarter turn (Euler Y 1024 of 4096): the ship crosses the view.
-const QUARTER_TURN := Basis(Vector3(0, 0, -1), Vector3(0, 1, 0), Vector3(1, 0, 0))
+## The original's turn for the opening (Euler Y Q_PI_HALF, which is 2048 of
+## the engine's 4096 per revolution: half a turn). From its start at z 120 000
+## the ship heads back along -z, towards the waiting pirates.
+const HALF_TURN := Basis(Vector3(-1, 0, 0), Vector3(0, 1, 0), Vector3(0, 0, -1))
 const FINAL_ESCAPE_MS := 60000
 var escape_started_at := -1
 
@@ -880,7 +882,7 @@ func _run_opening(ms: int) -> void:
 		0:
 			controls_locked = true
 			frozen = false
-			space.player.basis = QUARTER_TURN
+			space.player.basis = HALF_TURN
 			camera_mode = "look"
 			camera_position = Vector3(-1000, -500, 110000)
 			camera_target = space.player
@@ -921,7 +923,7 @@ func _run_opening(ms: int) -> void:
 				hud_hidden = true
 				controls_locked = true
 				space.player.weapons = []
-				space.player.basis = QUARTER_TURN
+				space.player.basis = HALF_TURN
 				camera_mode = "look"
 				camera_position = space.player.pos + Vector3(1000, -200, -60000)
 				camera_target = space.player

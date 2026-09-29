@@ -25,12 +25,12 @@ const PRESETS := [
 const PRESET_FALLBACKS := {"render_scale": 1.0, "msaa": 1, "enhanced_lighting": false, "dust": true, "lens_flare": true}
 
 ## Keyboard actions players can rebind, in the order the menu lists them.
-const BINDABLE := ["steer_up", "steer_down", "steer_left", "steer_right", "fire", "secondary",
-	"boost", "autopilot", "next_target", "auto_fire", "rear_view", "action_menu", "map", "cloak", "time_warp", "photo"]
+const BINDABLE := ["steer_up", "steer_down", "steer_left", "steer_right", "throttle_up", "throttle_down", "fire", "secondary",
+	"boost", "autopilot", "autopilot_menu", "next_target", "auto_fire", "rear_view", "action_menu", "map", "cloak", "time_warp", "photo"]
 const ACTION_NAMES := {"steer_up": "Pitch up", "steer_down": "Pitch down", "steer_left": "Turn left",
-	"steer_right": "Turn right", "fire": "Fire / use", "secondary": "Secondary weapon", "boost": "Booster",
-	"autopilot": "Autopilot", "next_target": "Next target", "auto_fire": "Auto fire",
-	"rear_view": "Rear view", "action_menu": "Actions / jump drive", "map": "Route map", "cloak": "Cloaking device", "time_warp": "Autopilot time speed", "photo": "Photo mode"}
+	"steer_right": "Turn right", "throttle_up": "Thrust up", "throttle_down": "Thrust down", "fire": "Fire / use", "secondary": "Secondary weapon", "boost": "Booster",
+	"autopilot": "Autopilot", "autopilot_menu": "Autopilot list", "next_target": "Next target", "auto_fire": "Auto fire",
+	"rear_view": "Rear view", "action_menu": "Actions / jump drive", "map": "Route map", "cloak": "Cloaking device", "time_warp": "Time speed", "photo": "Photo mode"}
 
 ## Colour sets for standing. The accessible set avoids red/green pairs and
 ## keeps enemy and friend apart by brightness as well as hue.
@@ -144,6 +144,8 @@ static func apply_bindings(app, defaults: Dictionary) -> void:
 		InputMap.action_set_deadzone(action, deadzone(app))
 		var custom := int(get_value(app, "keys", action, -1))
 		if custom <= 0: continue
+		# A pitch key saved as W or S from before those became the throttle.
+		if (action == "steer_up" and custom == KEY_W) or (action == "steer_down" and custom == KEY_S): continue
 		for e in InputMap.action_get_events(action):
 			if e is InputEventKey: InputMap.action_erase_event(action, e)
 		var key := InputEventKey.new()

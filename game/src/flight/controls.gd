@@ -11,17 +11,20 @@ var mouse_steer := true
 var mouse_owns := false
 const MOUSE_TAKEOVER_PX := 6.0
 ## While flying with the mouse the pointer is captured (as in Deep) and its
-## motion turns the ship directly: it is queued and paid out each tick no
-## faster than the ship can turn, with a short backlog, so the ship follows
-## the hand and flies straight the moment it stops.
+## motion turns the ship directly: it is queued and paid out over a short
+## response time, up to three times the rate the keys turn at (Deep's
+## ceiling), so a flick of the wrist brings the ship round.
 var captured := false
 var mouse_turn := Vector2.ZERO
 ## Alt held with the captured mouse: where the view is swung to.
 var mouse_look := Vector2.ZERO
-## Pixels of motion that make one tick's full-rate turn, and the most that
-## may wait (a fifth of a second of turning).
+## Pixels of motion that make one tick's full-rate turn, the most the mouse
+## may turn in a tick (in full-rate turns), how quickly queued motion is
+## paid out and the most that may wait.
 const MOUSE_PX_PER_TICK := 4.0
-const MOUSE_BACKLOG_TICKS := 12.0
+const MOUSE_RATE := 3.0
+const MOUSE_RESPONSE_MS := 80.0
+const MOUSE_BACKLOG_PX := 600.0
 var fire_was := false
 var pressed := {}
 ## The eased steering of the smooth helm.
@@ -33,9 +36,10 @@ const Prefs := preload("res://src/presentation/preferences.gd")
 
 const ACTIONS := {
 	"steer_left": [KEY_LEFT, KEY_A], "steer_right": [KEY_RIGHT, KEY_D],
-	"steer_up": [KEY_UP, KEY_W], "steer_down": [KEY_DOWN, KEY_S],
+	"steer_up": [KEY_UP], "steer_down": [KEY_DOWN],
+	"throttle_up": [KEY_W], "throttle_down": [KEY_S],
 	"fire": [KEY_SPACE, KEY_CTRL], "secondary": [KEY_E], "boost": [KEY_SHIFT],
-	"autopilot": [KEY_Q], "auto_fire": [KEY_F], "rear_view": [KEY_C],
+	"autopilot": [KEY_Q], "autopilot_menu": [KEY_R], "auto_fire": [KEY_F], "rear_view": [KEY_C],
 	"next_target": [KEY_TAB], "action_menu": [KEY_M], "map": [KEY_N],
 	"pause": [KEY_ESCAPE], "photo": [KEY_P], "cloak": [KEY_V], "time_warp": [KEY_T],
 }
@@ -57,7 +61,7 @@ func _input(event: InputEvent) -> void:
 			if Input.is_key_pressed(KEY_ALT):
 				mouse_look = (mouse_look + event.relative / 240.0).limit_length(1.0)
 			else:
-				mouse_turn = (mouse_turn + event.relative * Prefs.mouse_sensitivity(app)).limit_length(MOUSE_PX_PER_TICK * MOUSE_BACKLOG_TICKS)
+				mouse_turn = (mouse_turn + event.relative * Prefs.mouse_sensitivity(app)).limit_length(MOUSE_BACKLOG_PX)
 			mouse_owns = true
 		elif event.relative.length() >= MOUSE_TAKEOVER_PX: mouse_owns = true
 	elif event is InputEventJoypadMotion:
@@ -71,6 +75,11 @@ func _input(event: InputEvent) -> void:
 
 ## Screens are recreated on every arrival. Never accumulate duplicate bindings.
 static func ensure_actions() -> void:
+	# W and S once pitched the nose; they are the throttle now, as in Deep.
+	for pair in [["steer_up", KEY_W], ["steer_down", KEY_S]]:
+		if not InputMap.has_action(pair[0]): continue
+		for e in InputMap.action_get_events(pair[0]):
+			if e is InputEventKey and (e as InputEventKey).physical_keycode == pair[1]: InputMap.action_erase_event(pair[0], e)
 	for action in ACTIONS:
 		if not InputMap.has_action(action): InputMap.add_action(action, 0.2)
 		for key in ACTIONS[action]:
@@ -176,8 +185,14 @@ func state(view) -> Dictionary:
 		if captured:
 			if Input.is_key_pressed(KEY_ALT): look = mouse_look
 			else: mouse_look = Vector2.ZERO
-			var turn := Vector2(clampf(mouse_turn.x / MOUSE_PX_PER_TICK, -1.0, 1.0), clampf(mouse_turn.y / MOUSE_PX_PER_TICK, -1.0, 1.0))
-			mouse_turn -= turn * MOUSE_PX_PER_TICK
+			var tick_ms := 1000.0 / float(Engine.physics_ticks_per_second)
+			var wanted := mouse_turn * (1.0 - exp(-tick_ms / MOUSE_RESPONSE_MS))
+			# The tail is finished outright rather than creeping for ever.
+			if mouse_turn.length() < 3.0: wanted = mouse_turn
+			var ceiling := MOUSE_PX_PER_TICK * MOUSE_RATE
+			wanted = Vector2(clampf(wanted.x, -ceiling, ceiling), clampf(wanted.y, -ceiling, ceiling))
+			mouse_turn -= wanted
+			var turn := wanted / MOUSE_PX_PER_TICK
 			if turn.length() > 0.02 and absf(yaw) < 0.01 and absf(pitch) < 0.01:
 				yaw = turn.x
 				pitch = -turn.y * invert
@@ -207,8 +222,9 @@ func state(view) -> Dictionary:
 		app.set_setting("controls", "auto_fire", not bool(app.setting("controls", "auto_fire", false)))
 	return {"yaw": yaw, "pitch": pitch, "strafe": strafe, "fire": fire, "fire_pressed": fire_pressed, "secondary": secondary,
 		"boost": Input.is_action_pressed("boost") or bool(virtual.get("boost", false)),
+		"throttle": int(Input.get_axis("throttle_down", "throttle_up")),
 		"next_target": _just("next_target") or bool(virtual.get("next_target", false)),
-		"autopilot": bool(pilot[0]) or bool(virtual.get("autopilot", false)), "autopilot_list": bool(pilot[1]),
+		"autopilot": bool(pilot[0]) or bool(virtual.get("autopilot", false)), "autopilot_list": bool(pilot[1]) or _just("autopilot_menu"),
 		"cloak": _just("cloak"), "time_warp": _just("time_warp") or bool(virtual.get("time_warp", false)),
 		"action_menu": _just("action_menu") or bool(virtual.get("action_menu", false)), "map": _just("map") or bool(virtual.get("map", false)),
 		"auto_fire": bool(app.setting("controls", "auto_fire", false)), "auto_fire_toggled": auto_toggled}

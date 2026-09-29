@@ -64,7 +64,7 @@ func run() -> void:
 	expected.job = offer
 	expected.markets[0].lounge[0].erase("job")
 	expected.markets[0].lounge[0].kind = 1
-	expected.markets[0].lounge[0].speech = app.library.text(498)
+	expected.markets[0].lounge[0].speech = app.library.text(493)
 	check(accepted == normalized(expected), "acceptance changes only the actual job and its consumed lounge offer")
 	game.settle_job(96)
 	check(state(game) == accepted and game.pending_dialogue.is_empty(), "zero goods cannot earn a payment or completion")

@@ -51,19 +51,19 @@ func _fill() -> void:
 		if slots.is_empty(): continue
 		# The original heads each group with its filled and total slots.
 		var filled := slots.filter(func(x): return x != null).size()
-		slots_list.add_child(UI.label("%s (%d/%d)" % [app.library.text(HEADINGS[c]), filled, slots.size()], 15, UI.TEXT_DIM))
+		slots_list.add_child(Common.heading("%s (%d/%d)" % [app.library.text(HEADINGS[c]), filled, slots.size()]))
 		for i in slots.size():
 			var e = slots[i]
 			var icon: Control = Common.item_icon(app.library, int(e.id)) if e != null else TextureRect.new()
 			var text: String = (cat.item_name(int(e.id)) + ("  ×%d" % int(e.count) if int(e.count) > 1 else "")) if e != null else app.library.text(69)
-			slots_list.add_child(Common.row(icon, text, "", _select.bind(c, i)))
+			slots_list.add_child(Common.row(icon, text, "", _select.bind(c, i), c == sel_cat and i == sel_slot))
 	var st: Dictionary = game.session.ship_stats()
 	slots_list.add_child(HSeparator.new())
 	var facts := [[60, "%d / %d" % [int(game.session.ship.hull), int(st.max_hull)]], [61, "%d / %d t" % [game.session.cargo_used(), int(st.cargo_capacity)]],
 		[59, "%.2f" % float(st.handling)], [50, str(st.damage)]]
 	if int(st.shield) > 0: facts.append([107, str(st.shield)])
 	for f in facts:
-		slots_list.add_child(UI.label("%s: %s" % [app.library.text(f[0]), f[1]], 14))
+		slots_list.add_child(Common.fact_line(app.library.text(f[0]), f[1]))
 	_detail()
 
 func _select(c: int, i: int) -> void:
@@ -88,9 +88,16 @@ func _detail() -> void:
 	var e = slots[sel_slot]
 	if e != null:
 		var id := int(e.id)
-		detail.add_child(UI.label(cat.item_name(id), 18))
+		var head := HBoxContainer.new()
+		head.add_theme_constant_override("separation", 12)
+		head.add_child(Common.item_icon(app.library, id))
+		var name_label := UI.label(cat.item_name(id), 20)
+		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		head.add_child(name_label)
+		detail.add_child(head)
 		for f in Common.item_facts(app.library, cat, id):
-			detail.add_child(UI.label("%s: %s" % [f[0], f[1]], 14))
+			detail.add_child(Common.fact_line(f[0], f[1]))
 		detail.add_child(UI.button(app.library.text(138), func(): station.notify(_msg(game.demount(sel_cat, sel_slot), 88, id))))
 		detail.add_child(UI.button(app.library.text(137) + " (" + UI.money(game.price_here(id) * int(e.count)) + ")", func(): station.notify(_msg(game.sell_mounted(sel_cat, sel_slot), 86, id))))
 	else:
@@ -101,7 +108,7 @@ func _detail() -> void:
 		var id := int(k)
 		if cat.category(id) != sel_cat: continue
 		if not any:
-			detail.add_child(UI.label(app.library.text(139), 15, UI.TEXT_DIM))
+			detail.add_child(Common.heading(app.library.text(139)))
 			any = true
 		detail.add_child(Common.row(Common.item_icon(app.library, id), cat.item_name(id), "×%d" % game.session.cargo_count(id),
 			func(): station.notify(_msg(game.mount(id, sel_slot), 87, id))))

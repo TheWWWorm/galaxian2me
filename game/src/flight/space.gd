@@ -25,9 +25,17 @@ signal event(kind: String, data: Dictionary)
 ## The player's cruising speed and hit box (original units per millisecond
 ## and units); boost adds up to twice the booster's percentage.
 const PLAYER_SPEED := 2.0
+## The throttle (a remake addition, as in Deep and the GoF1 remake; the
+## original always cruises): W and S step it by a quarter, repeating while
+## held, and the ship eases to it in about a second.
+const THROTTLE_STEP := 25
+const THROTTLE_REPEAT_MS := 240
 const PLAYER_RADIUS := 1200.0
-const DOCKING_SPEED := 8.0
-const DOCKING_TIME := 3000
+## The original docks the moment the ship touches the station's hull: the
+## ship eases to a stop just short of it while the station screen comes up.
+const DOCKING_REACH := 1500.0
+const DOCKING_TIME := 1200
+var docking_speed := 0.0
 const GATE_ZONE := 7500.0
 const GATE_DISTANCE := 90000.0
 const ARRIVAL_DISTANCE := 120000.0
@@ -38,6 +46,11 @@ const TRAVEL_FLASH := 2000
 var game
 var cat
 var lib
+## The player's throttle in percent and where it is heading.
+var throttle := 100.0
+var throttle_target := 100
+var _throttle_dir := 0
+var _throttle_held := 0
 var rng := RandomNumberGenerator.new()
 var bodies: Array = []
 ## The station's far asteroid field, where pirate hideouts may lie.
@@ -48,6 +61,9 @@ var mothership: Body
 var gate: Body
 var arrival: Body
 var projectiles: Array = []
+## Rounds that have already hit, still drawn flying on to the hull; their
+## sparks burst when they get there. They carry no damage.
+var spent: Array = []
 var effects: Array = []
 var target: Body = null
 var lock_time := 0.0
@@ -63,20 +79,36 @@ var autopilot_waypoint := false
 ## The autopilot is flying to the asteroid field.
 var autopilot_field := false
 const FIELD_ARRIVAL := 15000.0
-## Time acceleration during autopilot travel (1 = normal).
+## Time acceleration (1 = normal): ×2 at any time, more on the autopilot.
 var time_scale := 1
 const TIME_SCALES := [1, 2, 4, 8]
 const WARP_CLEARANCE := 25000.0
 
-## Whether the flight may run faster than real time: only while the
+## Whether the flight may run at `scale` times real time. Double speed is
+## always there while the ship flies; more than that only while the
 ## autopilot flies, with no hostile near and nothing staged.
-func time_warp_allowed() -> bool:
-	if not autopilot or not player.alive or docking >= 0 or jumping >= 0 or using_jump_drive: return false
-	if mining_target != null or portal_arriving() or starting(): return false
-	if story != null and (story.controls_locked or story.hud_hidden): return false
+func time_warp_allowed(scale := 4) -> bool:
+	return time_warp_refusal(scale).is_empty()
+
+## The fastest speed-up allowed now (1 when none is).
+func time_warp_limit() -> int:
+	var best := 1
+	for s in TIME_SCALES:
+		if time_warp_allowed(s): best = s
+	return best
+
+## Why time may not run at `scale` times now, or "" when it may.
+func time_warp_refusal(scale := 4) -> String:
+	if not player.alive: return "Time speed-up is unavailable now"
+	if scale <= 2: return ""
+	if docking >= 0 or jumping >= 0 or using_jump_drive or travelling >= 0: return "Faster than ×2 is unavailable during this action"
+	if mining_target != null: return "Faster than ×2 is unavailable while mining"
+	if portal_arriving() or starting() or in_opening(): return "Faster than ×2 is unavailable here"
+	if story != null and (story.controls_locked or story.hud_hidden): return "Faster than ×2 is unavailable here"
+	if not autopilot: return "Faster than ×2 needs the autopilot"
 	for h in hostiles():
-		if h.pos.distance_to(player.pos) < WARP_CLEARANCE: return false
-	return true
+		if h.pos.distance_to(player.pos) < WARP_CLEARANCE: return "Faster than ×2 is off while enemies are near"
+	return ""
 var docking := -1
 var jumping := -1
 var jump_destination := {}
@@ -122,6 +154,9 @@ var portal_arrival_ms := -1
 ## the orbit information and a tip take the HUD's place.
 const START_MS := 7000
 var start_ms := -1
+## Leaving a station with a destination chosen: its course is set once the
+## launch is over.
+var launch_course_pending := false
 ## Whether areas open with it (the flight screen sets this from Options).
 var start_sequence := false
 var start_camera := Vector3.ZERO
@@ -184,6 +219,7 @@ func dispose() -> void:
 	ambient.clear()
 	wormhole = null
 	projectiles.clear()
+	spent.clear()
 	effects.clear()
 	player = null
 	station = null
@@ -270,13 +306,21 @@ func build() -> void:
 	lock_needed = float(cat.attr(int(scanner.id), Catalogue.A_SCAN_LOCK)) if not scanner.is_empty() else 4000.0
 	entry_mode = game.arrival_mode
 	game.arrival_mode = ""
+	launch_course_pending = entry_mode.is_empty() and not game.destination.is_empty()
 	story = Story.new(self)
 	if not story.setup(): story = null
 	Wingmen.spawn(self)
 	if start_sequence and s.story_step > 1 and not in_void and not (entry_mode in ["wormhole", "drive", "void_resume"]) \
 			and (story == null or (story.camera_mode == "chase" and not story.controls_locked)):
 		start_ms = 0
-		start_camera = player.pos + player.basis * Vector3(0, 700, -2000)
+		# LevelScript: the camera waits 10000 units ahead of the ship and a
+		# little to one side, turned only with the ship's heading, and
+		# watches it stream out of the station and past.
+		var ahead := Vector3(rng.randi_range(500, 999), rng.randi_range(500, 999), 10000)
+		if rng.randi_range(0, 1) == 0: ahead.x = -ahead.x
+		if rng.randi_range(0, 1) == 0: ahead.y = -ahead.y
+		var heading := atan2(player.forward().x, player.forward().z)
+		start_camera = player.pos + Basis(Vector3.UP, heading) * ahead
 		start_tip = START_TIPS[rng.randi_range(0, START_TIPS.size() - 1)]
 
 func _void_arrival_coordinate() -> float:
@@ -832,6 +876,9 @@ func step(delta: float, input: Dictionary) -> void:
 		return
 	_step_portal_arrival(ms)
 	if starting(): start_ms += ms
+	if launch_course_pending and not starting() and not portal_arriving():
+		launch_course_pending = false
+		_set_launch_course()
 	_step_wormhole(ms)
 	_step_cloak(ms)
 	if story != null:
@@ -904,7 +951,8 @@ func _fly_player(delta: float, ms: int, input: Dictionary) -> void:
 	var handling: float = float(st.handling) + float(st.steering) / 100.0
 	if docking >= 0:
 		docking += ms
-		player.pos += player.forward() * DOCKING_SPEED * ms
+		player.speed = docking_speed * maxf(0.0, 1.0 - float(docking) / DOCKING_TIME)
+		player.pos += player.forward() * player.speed * ms
 		if docking > DOCKING_TIME:
 			docking = -1
 			_store_ship_state()
@@ -956,7 +1004,7 @@ func _fly_player(delta: float, ms: int, input: Dictionary) -> void:
 	# Bank for the look of it, levelling out again when not turning.
 	# A sideways slide (Deep's strafe) leans the same way as a turn.
 	var strafe: float = 0.0 if autopilot or turret_mode else clampf(float(input.get("strafe", 0.0)), -1.0, 1.0)
-	player.ai["bank"] = move_toward(float(player.ai.get("bank", 0.0)), -(yaw + strafe * 0.6) * 0.5, delta * 1.5)
+	player.ai["bank"] = move_toward(float(player.ai.get("bank", 0.0)), clampf(-(yaw + strafe * 0.6) * 0.5, -0.6, 0.6), delta * 1.5)
 	# Boost: the booster's speed for its duration, then its reload time.
 	boost_length = int(st.boost_length)
 	# The original truncates: 2 + (int)(percent / 100 × 2), so a 60% or 80%
@@ -978,13 +1026,37 @@ func _fly_player(delta: float, ms: int, input: Dictionary) -> void:
 		if boost_time >= 0:
 			boost_ready = true
 			if int(st.boost_length) > 0: event.emit("message", {"text": lib.text(155)})
-	player.speed = boost_speed if player.boosting else PLAYER_SPEED
+	_steer_throttle(int(input.get("throttle", 0)), ms)
+	player.speed = boost_speed if player.boosting else PLAYER_SPEED * throttle / 100.0
 	player.pos += player.forward() * player.speed * ms
 	# Right is −x in the ship's frame (a right turn swings the nose to −x).
-	if strafe != 0.0: player.pos -= player.basis.x * strafe * player.speed * STRAFE_RATE * ms
+	if strafe != 0.0: player.pos -= player.basis.x * strafe * PLAYER_SPEED * STRAFE_RATE * ms
 	# Bounds: far out, the original pulls the ship back in.
 	if player.pos.length() > 500000.0:
 		player.pos = player.pos.normalized() * 480000.0
+
+## W / S: a press steps the throttle a quarter at once, holding repeats it.
+## The booster and the autopilot fly at full; easing off ends a boost.
+func _steer_throttle(direction: int, ms: int) -> void:
+	if autopilot or player.boosting: throttle_target = 100
+	if direction == 0:
+		_throttle_dir = 0
+	elif direction != _throttle_dir:
+		_throttle_dir = direction
+		_throttle_held = 0
+		set_throttle(throttle_target + direction * THROTTLE_STEP)
+	else:
+		_throttle_held += ms
+		if _throttle_held >= THROTTLE_REPEAT_MS:
+			_throttle_held = 0
+			set_throttle(throttle_target + direction * THROTTLE_STEP)
+	throttle = move_toward(throttle, float(throttle_target), float(ms) * 0.1)
+
+func set_throttle(value: int) -> void:
+	throttle_target = clampi(value, 0, 100)
+	if throttle_target < 100 and player.boosting:
+		player.boosting = false
+		boost_time = -int(game.session.ship_stats().boost_reload)
 
 func has_turret() -> bool:
 	for w in player.weapons:
@@ -1217,10 +1289,16 @@ func _player_weapons_step(ms: int, input: Dictionary) -> void:
 	for w in player.weapons:
 		w.cooldown = maxi(0, int(w.cooldown) - ms)
 	if docking >= 0 or jumping >= 0 or travelling >= 0: return
-	# Firing at a locked station, star, gate or asteroid acts on it instead.
-	if input.get("fire_pressed", false) and locked and target != null and not target.is_ship():
-		_act_on_target()
-		return
+	# Firing at a locked station, star, gate or asteroid under the crosshair
+	# acts on it instead; looking elsewhere, the guns fire as usual.
+	if input.get("fire_pressed", false) and target != null and not target.is_ship() and _aimed_body() == target:
+		# A remake convenience: a click on the station, gate or planet still
+		# being scanned finishes the lock, so one click flies there.
+		if (locked or _one_click(target)) and not _being_shot(target):
+			locked = true
+			lock_time = lock_needed
+			_act_on_target()
+			return
 	var shooting := fire or (auto and locked and target != null and target.is_ship() and target.hostile)
 	if shooting:
 		for w in player.weapons:
@@ -1286,10 +1364,16 @@ func _ignite_player_bomb(w: Dictionary) -> bool:
 func _fire(owner: Body, w: Dictionary, direction := Vector3.ZERO) -> void:
 	w.cooldown = int(w.reload)
 	var dir := direction if direction != Vector3.ZERO else owner.forward()
-	var origin: Vector3 = owner.pos + owner.basis * (w.offset as Vector3) + dir * 400.0
+	# Level.createGun: lasers leave 800 units ahead of the mount, the other
+	# guns 400.
+	var ahead := 800.0 if int(w.get("type", -1)) == Catalogue.Type.LASER else 400.0
+	var mount: Vector3 = owner.pos + owner.basis * (w.offset as Vector3)
+	var origin: Vector3 = mount + dir * ahead
 	# Gun.shootAt: the round flies at its own speed along the muzzle, without
-	# the ship's speed added.
-	var p := {"pos": origin, "vel": dir * float(w.speed), "life": int(w.life),
+	# the ship's speed added. The view starts the bolt's streak at the muzzle.
+	# Its first step is swept from the mount itself, so a ship closer than the
+	# muzzle is hit rather than shot through.
+	var p := {"pos": origin, "muzzle": origin, "from": mount, "vel": dir * float(w.speed), "life": int(w.life),
 		"owner": owner, "weapon": w, "target": target if owner == player else owner.ai.get("target")}
 	projectiles.append(p)
 	if owner == player:
@@ -1310,6 +1394,14 @@ func npc_fire(b: Body, w: Dictionary) -> void:
 	_fire(b, w)
 
 func _projectiles_step(delta: float, ms: int) -> void:
+	var flying: Array = []
+	for p in spent:
+		p.pos += p.vel * ms
+		if ((p.hit_at as Vector3) - (p.pos as Vector3)).dot(p.vel) <= 0.0:
+			effects.append({"kind": "spark", "pos": p.hit_at, "time": 0.0, "life": SPARK_GROW + SPARK_FADE})
+		else:
+			flying.append(p)
+	spent = flying
 	var keep: Array = []
 	for p in projectiles:
 		var w: Dictionary = p.weapon
@@ -1321,8 +1413,16 @@ func _projectiles_step(delta: float, ms: int) -> void:
 			if mark != null:
 				p.vel = (mark.pos - p.pos).normalized() * p.vel.length()
 		var step_vec: Vector3 = p.vel * ms
-		var hit: Body = _sweep(p, step_vec)
-		p.pos += step_vec
+		var hit: Body
+		if p.has("from"):
+			var to: Vector3 = p.pos + step_vec
+			p.pos = p["from"]
+			p.erase("from")
+			hit = _sweep(p, to - p.pos)
+			p.pos = to
+		else:
+			hit = _sweep(p, step_vec)
+			p.pos += step_vec
 		if hit != null:
 			# Report resolved missiles separately from the launch sound. A
 			# homing target is not necessarily the first body along its path.
@@ -1371,10 +1471,14 @@ func _sweep(p: Dictionary, step_vec: Vector3) -> Body:
 		if not b.visible and not b.combat_active: continue
 		if b.kind == Body.Kind.STAR or b.kind == Body.Kind.ARRIVAL: continue
 		if b.kind == Body.Kind.STATION:
-			if _inside_station(p.pos + step_vec): return b
+			if _inside_station(p.pos + step_vec):
+				p["hit_at"] = p.pos + step_vec
+				return b
 			continue
 		if b.kind == Body.Kind.MOTHERSHIP:
-			if _inside_mothership(p.pos + step_vec): return b
+			if _inside_mothership(p.pos + step_vec):
+				p["hit_at"] = p.pos + step_vec
+				return b
 			continue
 		# Ordinary NPC friendly fire stays ignored, but cb.java explicitly
 		# permits commanding a non-fixed-friendly ship of the pilot's race.
@@ -1390,14 +1494,28 @@ func _sweep(p: Dictionary, step_vec: Vector3) -> Body:
 		var r: float = b.radius
 		if absf(d.x) < r and absf(d.y) < r and absf(d.z) < r and t < best_t:
 			best_t = t; best = b
+			# The hit box is wide (Gun: a cube of the ship's radius), so the
+			# round registers well short of the hull. The sparks burst where
+			# its line passes the ship instead.
+			var along := maxf(0.0, rel.dot(step_vec) / maxf(1.0, step_vec.length_squared()))
+			p["hit_at"] = p.pos + step_vec * along
 	return best
+
+## Level's gun sparks: ten sprites that swell over 0.7 s, then fade.
+const SPARK_GROW := 0.7
+const SPARK_FADE := 0.35
 
 func _impact(p: Dictionary, hit: Body) -> void:
 	var w: Dictionary = p.weapon
 	if w.kind == "emp" or w.kind == "nuke":
 		_blast(p)
 		return
-	effects.append({"kind": "spark", "pos": p.pos, "time": 0.0, "life": 0.3})
+	var at: Vector3 = p.get("hit_at", p.pos)
+	var vel: Vector3 = p.get("vel", Vector3.ZERO)
+	if (at - (p.pos as Vector3)).dot(vel) > 0.0:
+		spent.append({"pos": p.pos, "vel": vel, "muzzle": p.get("muzzle", p.pos), "weapon": w, "hit_at": at})
+	else:
+		effects.append({"kind": "spark", "pos": at, "time": 0.0, "life": SPARK_GROW + SPARK_FADE})
 	if hit.kind in [Body.Kind.STATION, Body.Kind.GATE, Body.Kind.MOTHERSHIP]: return
 	# Gun.calcCharacterCollision: a rocket or torpedo breaks an asteroid outright.
 	if w.kind == "missile" and hit.kind == Body.Kind.ASTEROID:
@@ -1434,6 +1552,7 @@ func _harm(b: Body, damage: float, emp_damage: float, source: Body) -> void:
 	if source == player and bool(b.ai.get("player_protected", false)): return
 	var was_alive := b.alive
 	if b.kind == Body.Kind.ASTEROID:
+		if source == player: b.ai["shot_at"] = clock
 		b.hull -= int(ceil(damage))
 		if b.hull <= 0:
 			_break_asteroid(b)
@@ -1614,14 +1733,14 @@ func _collisions() -> void:
 		if away.is_zero_approx(): away = -player.forward()
 		player.basis = Body.facing(away, player.basis.y)
 		player.pos += away * 800.0
+	if target == station and not in_void and not mission_holds_here() and _inside_station(player.pos, DOCKING_REACH):
+		_begin_docking()
+		return
 	if _inside_station(player.pos, -3500.0):
-		if target == station and not in_void and not mission_holds_here():
-			_begin_docking()
-		else:
-			if target == station and mission_holds_here(): _say_held()
-			var away := (player.pos - station.pos).normalized()
-			player.basis = Body.facing(away, player.basis.y)
-			player.pos += away * 800.0
+		if target == station and mission_holds_here(): _say_held()
+		var away := (player.pos - station.pos).normalized()
+		player.basis = Body.facing(away, player.basis.y)
+		player.pos += away * 800.0
 	for b in bodies:
 		if not b.alive or b == player: continue
 		match b.kind:
@@ -1764,6 +1883,15 @@ func _loot(b: Body) -> void:
 ## original refuses docking, gates and flights to other planets until the
 ## mission is won or lost ("Not possible while on a mission"). Deliveries
 ## and passengers are exempt, and a recovered container is on its way home.
+## Leaving the station's orbit (another planet, the gate): the original
+## keeps the map shut until campaign step 9 and its radar refuses planets
+## while a mission runs, so the early story's goals here hold you here.
+const TRAVEL_STEP := 9
+func travel_held() -> bool:
+	if mission_holds_here(): return true
+	var goal := int(game.session.story_mission.get("station", -1)) if game.session.story_mission is Dictionary else -1
+	return int(game.session.story_step) < TRAVEL_STEP and goal == int(game.session.station_id)
+
 func mission_holds_here() -> bool:
 	if story == null or story.job.is_empty() or story.complete or story.failed: return false
 	if bool(story.job.get("recovered", false)) or bool(story.job.get("done", false)): return false
@@ -1779,13 +1907,15 @@ func _say_held() -> void:
 func _begin_docking() -> void:
 	if docking >= 0: return
 	docking = 0
+	docking_speed = minf(player.speed, PLAYER_SPEED)
 	autopilot = false
+	player.boosting = false
 	player.basis = Body.facing(station.pos - player.pos, player.basis.y)
 	event.emit("docking", {})
 
 func _use_gate() -> void:
 	if navigation_locked() or gate == null or target != gate or player.pos.distance_to(gate.pos) >= GATE_ZONE: return
-	if mission_holds_here():
+	if travel_held():
 		_say_held()
 		return
 	var dest: Dictionary = game.destination
@@ -1829,16 +1959,60 @@ func jump_to(station_id: int) -> bool:
 	event.emit("drive", destination.duplicate())
 	return true
 
+## A rock the player's guns hit within the last moments: clicks keep
+## shooting it until it breaks rather than turning to mine it.
+func _being_shot(b: Body) -> bool:
+	return b.kind == Body.Kind.ASTEROID and clock - int(b.ai.get("shot_at", -100000)) < SHOOTING_GRACE
+
+const SHOOTING_GRACE := 2000
+
+## Places a click flies to without waiting for the scan to finish.
+static func _one_click(b: Body) -> bool:
+	return b.kind in [Body.Kind.STATION, Body.Kind.GATE, Body.Kind.STAR]
+
 ## What firing would do to the current target instead of shooting:
-## "dock", "gate", "wormhole" or "mine"; empty when it would just fire.
+## "dock", "gate", "travel", "wormhole" or "mine"; empty when it would just
+## fire. Places to fly to answer while still being scanned: one click there
+## finishes the lock and goes.
 func target_action() -> String:
-	if target == null or not target.alive or not locked or target.is_ship() or autopilot or mining != null: return ""
+	if mining_target != null: return "stop_mining"
+	if target == null or not target.alive or target.is_ship() or autopilot or mining != null or _aimed_body() != target: return ""
+	if not locked and not _one_click(target): return ""
+	if _being_shot(target): return ""
 	match target.kind:
 		Body.Kind.STATION: return "dock"
 		Body.Kind.GATE: return "gate"
+		Body.Kind.STAR: return "travel"
 		Body.Kind.WORMHOLE: return "wormhole" if target.visible else ""
 		Body.Kind.ASTEROID: return "mine"
 	return ""
+
+## Starts the in-system travel to another station's planet.
+func _travel_to(planet: Body) -> void:
+	if travel_held():
+		_say_held()
+		return
+	travel_station = planet.station_id
+	travelling = 0
+	game.destination = {"station": travel_station}
+	event.emit("sound", {"name": "fx_message_05"})
+
+## The planet the autopilot is flying to, or null.
+func _autopilot_planet() -> Body:
+	if not autopilot or autopilot_waypoint or autopilot_field: return null
+	var way: Body = target if target != null and target.alive else course_body()
+	return way if way != null and way.kind == Body.Kind.STAR else null
+
+## LevelScript.setAutoPilotToProgrammedStation: once the launch is over, a
+## destination chosen at the station sets the autopilot on its course, to
+## the planet in this system or to the jump gate out of it.
+func _set_launch_course() -> void:
+	var way := course_body()
+	if way == null or way == station or navigation_locked(): return
+	_engage_autopilot()
+	target = way
+	locked = true
+	event.emit("message", {"text": lib.text(270) + ": " + cat.station_name(int(game.destination.get("station", -1)))})
 
 ## Acting on a locked target that is not a ship.
 func _act_on_target() -> void:
@@ -1855,13 +2029,7 @@ func _act_on_target() -> void:
 				autopilot = true
 				event.emit("sound", {"name": "fx_message_05"})
 		Body.Kind.STAR:
-			if mission_holds_here():
-				_say_held()
-				return
-			travel_station = target.station_id
-			travelling = 0
-			game.destination = {"station": travel_station}
-			event.emit("sound", {"name": "fx_message_05"})
+			_travel_to(target)
 		Body.Kind.ASTEROID:
 			_begin_mining(target)
 
@@ -1890,6 +2058,15 @@ func _mining_step(delta: float, ms: int, input: Dictionary) -> void:
 	if not a.alive:
 		mining_target = null
 		mining = null
+		return
+	# A remake addition: fire again to stop early and keep the ore drilled
+	# so far (before the drill starts, it just calls the approach off).
+	if input.get("fire_pressed", false):
+		if mining == null:
+			mining_target = null
+		else:
+			mining.finished = true
+			_finish_mining()
 		return
 	var reach: float = 1500.0 * (a.scale.x + a.scale.y + a.scale.z) / 2.0 + PLAYER_RADIUS
 	if mining == null:
@@ -1974,6 +2151,16 @@ func _targeting(ms: int, input: Dictionary) -> void:
 	elif (target == null or not target.alive) and course_body() == null:
 		# Nothing locked and no destination chosen: nowhere to fly.
 		autopilot = false
+	else:
+		# The original's planet course ends in the approach to the planet:
+		# here, the in-system travel once the nose is on it.
+		var planet := _autopilot_planet()
+		if planet != null and player.forward().dot(_star_direction(planet)) > 0.995:
+			autopilot = false
+			target = planet
+			locked = true
+			_travel_to(planet)
+			return
 	if input.get("next_target", false):
 		_cycle_target()
 		return
@@ -2000,10 +2187,46 @@ func _targeting(ms: int, input: Dictionary) -> void:
 func in_opening() -> bool:
 	return story != null and story.step == 0
 
+## How squarely (the cosine of the angle off the crosshair) a station or
+## gate must be held to win over ships near it: about 4 degrees.
+const LANDMARK_AIM := 0.9975
+
 func _aimed_body() -> Body:
 	var best: Body = null
 	var best_dot := 0.985
 	var fwd := player.forward()
+	# Radar: ships have their own scan and come first; then the station and
+	# the jump gate, from any range, ahead of the asteroids around them,
+	# unless an asteroid is already locked and still under the crosshair.
+	# Radar.java scans the landmarks first in its tight crosshair box: one
+	# held right under the crosshair wins over a ship passing near it, unless
+	# that ship is aimed at more squarely still.
+	var held_rock := locked and target != null and target.alive and target.kind == Body.Kind.ASTEROID \
+		and fwd.dot((target.pos - player.pos).normalized()) > best_dot
+	var mark: Body = null
+	var mark_dot := LANDMARK_AIM
+	if not in_opening() and not held_rock:
+		for b in [station, gate]:
+			if b == null or not b.alive or not b.visible: continue
+			var d := fwd.dot((b.pos - player.pos).normalized())
+			if d > mark_dot:
+				mark_dot = d; mark = b
+	for b in bodies:
+		if not b.is_ship() or b == player or not b.alive or not b.visible: continue
+		var to: Vector3 = b.pos - player.pos
+		if to.length() > 300000.0: continue
+		var d := fwd.dot(to.normalized())
+		if d > best_dot:
+			best_dot = d; best = b
+	if mark != null and (best == null or mark_dot >= best_dot): return mark
+	if best != null: return best
+	if not in_opening() and not held_rock:
+		for b in [station, gate]:
+			if b == null or not b.alive or not b.visible: continue
+			var d := fwd.dot((b.pos - player.pos).normalized())
+			if d > best_dot:
+				best_dot = d; best = b
+		if best != null: return best
 	for b in bodies:
 		if in_opening() and not b.is_ship(): continue
 		if not b.visible and b.kind != Body.Kind.STAR: continue

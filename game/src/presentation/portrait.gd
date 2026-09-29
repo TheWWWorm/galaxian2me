@@ -48,6 +48,8 @@ static func make(library, speaker: int, face: Array, factor := 2.0) -> Control:
 	if record.is_empty() and speaker >= 0: record = speaker_face(library, speaker)
 	var box := Panel.new()
 	box.custom_minimum_size = FRAME * factor
+	# Its own size in a row beside taller text, not the row's height.
+	box.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0, 0, 0, 0.6)
 	style.border_color = UI.BORDER

@@ -63,7 +63,9 @@ func _ready() -> void:
 		_inset_touch()
 		get_viewport().size_changed.connect(_inset_touch)
 	space.event.connect(_on_event)
-	app.play_music("gof2_gneutral" if randi() % 2 == 0 else "gof2_gaction")
+	# MGame: the first two campaign steps fly to the neutral track, later
+	# flights to it or the title theme; the combat track follows enemies.
+	app.play_music("gof2_gneutral" if int(game.session.story_step) <= 1 or randi() % 2 == 0 else "gof2_theme")
 	# The story step's briefing plays when the flight begins, as a paused
 	# conversation like the original's.
 	# Ordinary goals (including the first mining tutorial) have no scripted
@@ -205,17 +207,21 @@ func _physics_process(delta: float) -> void:
 	# Account for this frame before that boundary, never mutate the session
 	# from a flight screen that has already been replaced by the station.
 	if bool(input.get("time_warp", false)):
-		if space.time_warp_allowed():
-			var at: int = space.TIME_SCALES.find(space.time_scale)
-			space.time_scale = space.TIME_SCALES[(at + 1) % space.TIME_SCALES.size()]
+		# Each press steps up a speed; past the fastest allowed it returns to
+		# real time, saying why it could go no faster.
+		var at: int = space.TIME_SCALES.find(space.time_scale)
+		var next: int = space.TIME_SCALES[(at + 1) % space.TIME_SCALES.size()]
+		if next == 1 or space.time_warp_allowed(next):
+			space.time_scale = next
 		else:
-			space.event.emit("message", {"text": "Time speed-up needs the autopilot and no enemies near"})
-	# Accelerated time runs several ordinary steps per frame and stops the
-	# moment anything needs the pilot.
+			space.event.emit("message", {"text": space.time_warp_refusal(next)})
+			space.time_scale = 1
+	# Accelerated time runs several ordinary steps per frame; beyond double
+	# speed it falls back the moment anything needs the pilot.
 	var steps := 1
 	if space.time_scale > 1:
-		if space.time_warp_allowed() and conversation == null: steps = space.time_scale
-		else: space.time_scale = 1
+		space.time_scale = mini(space.time_scale, space.time_warp_limit())
+		if conversation == null: steps = space.time_scale
 	# The view draws between the poses before and after this tick.
 	space.restore_poses()
 	for b in space.bodies:
@@ -227,19 +233,25 @@ func _physics_process(delta: float) -> void:
 	var tick := int(ms_carry)
 	ms_carry -= tick
 	var step_delta := (float(tick) + 0.01) / 1000.0
+	# Extra steps of sped-up time keep the held controls (steering, thrust,
+	# guns, booster); presses act once, in the first.
+	var held := {}
+	for key in ["yaw", "pitch", "strafe", "throttle", "fire", "boost", "auto_fire"]:
+		if input.has(key): held[key] = input[key]
 	for i in steps:
 		game.session.playtime_ms += tick
 		flight_ms += tick
-		space.step(step_delta, input if i == 0 else {"yaw": 0.0, "pitch": 0.0})
+		space.step(step_delta, input if i == 0 else held)
 		if app.screen != self or is_queued_for_deletion() or defeated or paused: return
-		if i > 0 and not space.time_warp_allowed():
-			space.time_scale = 1
+		if i > 0 and not space.time_warp_allowed(space.time_scale):
+			space.time_scale = space.time_warp_limit()
 			break
 	if app.screen != self or is_queued_for_deletion() or defeated: return
 	if touch != null:
-		touch.set_warp("Time ×%d" % space.time_scale if space.time_scale > 1 else ("Faster" if space.time_warp_allowed() else ""))
-		touch.set_use({"dock": "Dock", "gate": "Fly in", "wormhole": "Fly in", "mine": "Mine"}.get(space.target_action(), ""))
+		touch.set_warp("Time ×%d" % space.time_scale if space.time_scale > 1 else ("Faster" if space.time_warp_allowed(2) else ""))
+		touch.set_use({"dock": "Dock", "gate": "Fly in", "travel": "Travel", "wormhole": "Fly in", "mine": "Mine", "stop_mining": "Stop"}.get(space.target_action(), ""))
 		if not touch.use_label.is_empty(): touch.queue_redraw()
+	_follow_combat_music()
 	if space.portal_arriving() or space.using_jump_drive: return
 	# Main/o announces elapsed contracts once in the current area. The
 	# original level builder removes their roster on the next area entry.
@@ -555,7 +567,9 @@ func _unhandled_input(event: InputEvent) -> void:
 
 ## Modal flight controls use the same pause ownership as briefings. Closing
 ## a map never releases a focus-loss pause, defeat or active conversation.
-func _navigation_box(title: String) -> VBoxContainer:
+## `icon` is [sheet, frame] of one of the original's icons for the tab
+## over the window, as the iOS release heads its quick menus.
+func _navigation_box(title: String, icon := []) -> VBoxContainer:
 	close_navigation()
 	navigation_layer = Control.new()
 	navigation_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -564,11 +578,49 @@ func _navigation_box(title: String) -> VBoxContainer:
 	var center := CenterContainer.new()
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	navigation_layer.add_child(center)
-	var frame := UI.Frame.new(title)
+	var stack := VBoxContainer.new()
+	stack.add_theme_constant_override("separation", -1)
+	center.add_child(stack)
+	# The tab: the menu's icon and name on a raised plate over the window.
+	var tab := PanelContainer.new()
+	tab.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	var tab_box := UI.panel_box(false)
+	tab_box.corner_radius_bottom_left = 0
+	tab_box.corner_radius_bottom_right = 0
+	tab_box.border_width_bottom = 0
+	tab_box.set_content_margin_all(8)
+	tab_box.content_margin_left = 16
+	tab_box.content_margin_right = 18
+	tab.add_theme_stylebox_override("panel", tab_box)
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 10)
+	tab.add_child(head)
+	var sheet: Texture2D = app.library.texture(str(icon[0])) if icon.size() == 2 else null
+	if sheet != null:
+		var a := AtlasTexture.new()
+		a.atlas = sheet
+		a.region = Rect2(int(icon[1]) * sheet.get_height(), 0, sheet.get_height(), sheet.get_height())
+		var pic := TextureRect.new()
+		pic.texture = a
+		pic.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		pic.custom_minimum_size = Vector2(34, 34)
+		head.add_child(pic)
+	var name_label := UI.label(title, 18, UI.TEXT)
+	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	head.add_child(name_label)
+	stack.add_child(tab)
+	var frame := UI.Frame.new("")
 	frame.custom_minimum_size.x = 440
-	center.add_child(frame)
+	stack.add_child(frame)
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 8)
+	box.add_theme_constant_override("separation", 10)
+	# Wide, tall buttons with their words centred, easy to hit with a thumb.
+	box.child_entered_tree.connect(func(n: Node):
+		if n is Button:
+			(n as Button).custom_minimum_size.y = 48
+			(n as Button).alignment = HORIZONTAL_ALIGNMENT_CENTER
+			(n as Button).add_theme_font_size_override("font_size", 17))
 	frame.add_child(box)
 	navigation_panel = box
 	_sync_pause()
@@ -578,7 +630,7 @@ func open_actions() -> void:
 	if conversation != null or defeated or menu_paused or space.navigation_locked(): return
 	# The original clicks as its action menu and weapon submenu open.
 	app.play_sound("fx_menu_04")
-	var box := _navigation_box(app.library.text(136))
+	var box := _navigation_box(app.library.text(136), ["hud_icons", 16])
 	var tip := Tips.station_tip(app, "action_menu")
 	if not tip.is_empty(): box.add_child(UI.paragraph(str(tip.text), 13, UI.TEXT_DIM))
 	box.add_child(_quick_icon(UI.button(app.catalogue.item_name(85), open_drive,
@@ -625,7 +677,7 @@ func _quick_icon(b: Button, frame: int) -> Button:
 ## field and mission waypoint, as far as they exist here.
 func open_autopilot() -> void:
 	if app.screen != self or conversation != null or defeated or menu_paused or space.navigation_locked(): return
-	var box := _navigation_box(app.library.text(292))
+	var box := _navigation_box(app.library.text(292), ["hud_icons", 0])
 	for choice in space.autopilot_choices():
 		box.add_child(_quick_icon(UI.button(str(choice.label), func():
 			close_navigation()
@@ -637,7 +689,7 @@ func open_autopilot() -> void:
 func open_secondaries() -> void:
 	if app.screen != self or conversation != null or defeated or menu_paused or space.navigation_locked(): return
 	app.play_sound("fx_menu_04")
-	var box := _navigation_box(app.library.text(124))
+	var box := _navigation_box(app.library.text(124), ["quickmenu", 3])
 	var current := space.current_secondary()
 	var first: Button = null
 	for w in space.secondary_launchers():
@@ -656,7 +708,7 @@ func open_wingmen() -> void:
 	if app.screen != self or conversation != null or defeated or menu_paused or space.navigation_locked(): return
 	var pilots := Wingmen.living(space)
 	if pilots.is_empty(): return
-	var box := _navigation_box(app.library.text(146))
+	var box := _navigation_box(app.library.text(146), ["quickmenu", 5])
 	box.add_child(UI.paragraph(" · ".join(pilots.map(func(b): return b.name))))
 	for row in [[147, Wingmen.FIRE_AT_WILL], [148, Wingmen.ATTACK_TARGET], [149, Wingmen.SECURE_WAYPOINT],
 		[Wingmen.switch_label(space), Wingmen.SWITCH_GUN]]:
@@ -686,7 +738,7 @@ func open_drive() -> void:
 	if game.session.in_void:
 		confirm_navigation({"station": game.session.station_id}, "drive")
 		return
-	var box := _navigation_box(app.catalogue.item_name(85))
+	var box := _navigation_box(app.catalogue.item_name(85), ["quickmenu", 6])
 	box.add_child(UI.paragraph(app.library.text(243)))
 	box.add_child(UI.button(app.library.text(38), confirm_navigation.bind({"station": -1}, "drive")))
 	box.add_child(UI.button(app.library.text(39), open_navigation.bind("drive")))
@@ -696,6 +748,10 @@ func open_drive() -> void:
 func open_navigation(mode: String) -> void:
 	if mode not in ["route", "drive", "gate"] or conversation != null or defeated or menu_paused or space.navigation_locked(): return
 	if mode == "drive" and not space.drive_error().is_empty(): return
+	# The station keeps the map shut until campaign step 9; so does flight.
+	if mode == "route" and int(game.session.story_step) < space.TRAVEL_STEP:
+		space.event.emit("message", {"text": app.library.text(257)})
+		return
 	if game.session.in_void:
 		if mode != "gate": open_drive()
 		return
@@ -745,3 +801,15 @@ func _exit_tree() -> void:
 	if controls != null: controls.reset()
 	if view != null: view.queue_free()
 	if space != null: space.dispose()
+
+## Radar: the combat track while an enemy is on the radar, and back to the
+## neutral one (unless the title theme is playing) once none is.
+func _follow_combat_music() -> void:
+	if space.player == null: return
+	var fighting := false
+	for h in space.hostiles():
+		if h.pos.distance_to(space.player.pos) < Hud.RADAR_REACH:
+			fighting = true
+			break
+	if fighting: app.play_music("gof2_gaction")
+	elif not str(app.get("music_name")) in ["gof2_gneutral", "gof2_theme"]: app.play_music("gof2_gneutral")

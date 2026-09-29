@@ -246,6 +246,14 @@ func mesh(name: String, skinned := false, pattern := 0) -> Array:
 		for poly: Dictionary in g.faces:
 			var a: Array = poly.attributes
 			var stride := 5
+			# Blended faces (flames, glows) are often seen edge on, where a
+			# corner lying on its region's border reaches the atlas texel
+			# beside it: thin dotted lines along the edges. Their texture
+			# coordinates are pulled half a texel inside the region.
+			var inset := Rect2()
+			if g.texture >= 0 and int(g.blend) != 0:
+				inset = Rect2(Vector2(a[0], a[1]), Vector2.ZERO)
+				for j in poly.indices.size(): inset = inset.expand(Vector2(a[j * stride], a[j * stride + 1]))
 			for j in poly.indices.size():
 				var index := int(poly.indices[j])
 				var bone := vertex_bone[index]
@@ -260,7 +268,10 @@ func mesh(name: String, skinned := false, pattern := 0) -> Array:
 				norms.append(n)
 				uv2.append(Vector2(bone, 0))
 				if g.texture >= 0:
-					uvs.append(Vector2(a[j * stride], a[j * stride + 1]))
+					var uv := Vector2(a[j * stride], a[j * stride + 1])
+					if inset.size.x >= 1.0: uv.x = clampf(uv.x, inset.position.x + 0.5, inset.end.x - 0.5)
+					if inset.size.y >= 1.0: uv.y = clampf(uv.y, inset.position.y + 0.5, inset.end.y - 0.5)
+					uvs.append(uv)
 					colors.append(Color.WHITE)
 				else:
 					uvs.append(Vector2.ZERO)

@@ -170,7 +170,7 @@ func pilot(reference: WeakRef) -> Dictionary:
 func point_at(space, position: Vector3, goal: Body) -> Dictionary:
 	var steer: Vector2 = space._steer_towards(space.player, position)
 	return {"yaw": clampf(steer.x * 3.0, -1.0, 1.0), "pitch": clampf(steer.y * 3.0, -1.0, 1.0),
-		"autopilot": space.autopilot, "fire_pressed": space.target == goal and space.locked and goal.kind == Body.Kind.ASTEROID}
+		"autopilot": space.autopilot, "fire_pressed": space.target == goal and space.locked and goal.kind == Body.Kind.ASTEROID and space.mining_target == null}
 func observe() -> void:
 	await super.observe()
 	if app.screen is Flight:

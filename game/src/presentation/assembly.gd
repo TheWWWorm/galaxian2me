@@ -95,12 +95,15 @@ static func ship(library, index: int, faction := 0) -> Node3D:
 	return root
 
 ## The flames lengthen with the boost as the original's do: half a unit
-## across and a whole unit along at full thrust.
-static func stretch_boosters(boosters: Node3D, amount: float) -> void:
+## across and a whole unit along at full thrust. `power` is the throttle
+## (0-1): the flames draw in towards the nozzles as it closes, as Deep's do.
+static func stretch_boosters(boosters: Node3D, amount: float, power := 1.0) -> void:
+	var p := clampf(power, 0.0, 1.0)
+	var draw_in := Vector3(lerpf(0.55, 1.0, p), lerpf(0.55, 1.0, p), lerpf(0.08, 1.0, p))
 	for node in boosters.get_children():
 		if not node.has_meta("rest_scale"): continue
 		var grow := Vector3(0.5, 0.5, 1.0) * amount
-		node.basis = Basis.from_scale(node.get_meta("rest_scale") + grow) * node.get_meta("turn")
+		node.basis = Basis.from_scale(Vector3(node.get_meta("rest_scale")) * draw_in + grow) * node.get_meta("turn")
 
 ## A station laid out from its record, or null when the table has none.
 static func station(library, station_id: int, faction: int) -> Node3D:

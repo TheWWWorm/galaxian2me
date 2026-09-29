@@ -30,7 +30,8 @@ func _ready() -> void:
 	shade.color = Color(0, 0, 0, 0.35)
 	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(shade)
-	frame = UI.Frame.new("")
+	# Titled with the speaker's name once a line is shown.
+	frame = UI.Frame.new(" ")
 	frame.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
 	frame.custom_minimum_size = Vector2(760, 0)
 	frame.grow_horizontal = Control.GROW_DIRECTION_BOTH

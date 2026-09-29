@@ -177,15 +177,6 @@ func defend_primary(space) -> Dictionary:
 	return {"yaw": clampf(stick.x * 2.0, -1.0, 1.0), "pitch": clampf(stick.y * 2.0, -1.0, 1.0),
 		"fire": safe_shot and distance < reach, "boost": distance > 20000.0, "autopilot": space.autopilot}
 
-func select_system(map, id: int) -> void:
-	var click := InputEventMouseButton.new()
-	click.button_index = MOUSE_BUTTON_LEFT
-	click.pressed = true
-	click.position = map._to_screen(map.canvas, app.catalogue.system(id))
-	map.canvas._gui_input(click)
-	await frames(3)
-	check(map.selected_system == id, "real map pointer selects warning/mission system %d" % id)
-
 func inspect_warning(label: String) -> void:
 	var before := snapshot()
 	if not press(app.screen.menu.get_child(2), "Map warning inspection"): return
@@ -193,15 +184,13 @@ func inspect_warning(label: String) -> void:
 	var map = app.screen.current_panel
 	check(map.wormhole_address() == {"station": 91, "system": 18}, "earned map warning uses actual Dima portal address")
 	check(map.story_address() == {"station": 10, "system": 6}, "earned map retains Thynome story destination")
-	await select_system(map, 18)
-	var dima := named_button(map.side, app.catalogue.station_name(91))
+	var dima := await map_station(map, 91)
 	check(dima != null and dima.has_meta("wormhole_station") and not dima.has_meta("story_station"),
-		"original portal animation marks Dima's station row, separate from the crystal delivery")
+		"original portal animation marks Dima's card, separate from the crystal delivery")
 	await shot(label + "_map_portal_warning")
 	await frames(18)
 	await shot(label + "_map_portal_animated")
-	await select_system(map, 6)
-	var thynome := named_button(map.side, app.catalogue.station_name(10))
+	var thynome := await map_station(map, 10)
 	check(thynome != null and thynome.has_meta("story_station") and not thynome.has_meta("wormhole_station"),
 		"Thynome keeps only the correct mission marker")
 	await shot(label + "_map_thynome_mission")

@@ -101,7 +101,7 @@ func accept_buyer() -> void:
 		if int(market.station) != int(order.station): continue
 		market.lounge[0].erase("job")
 		market.lounge[0].kind = 1
-		market.lounge[0].speech = app.library.text(498)
+		market.lounge[0].speech = app.library.text(493)
 	check(snapshot() == normalized(expected) and app.save_attempts.is_empty(),
 		"native acceptance grants no goods, credits or completion and changes only the saved offer and job")
 	transactions.append({"kind": "accept", "before": before, "after": snapshot(), "order": order})
@@ -135,9 +135,7 @@ func travel_to(station_id: int) -> void:
 	var station = app.screen
 	var map = station.current_panel
 	var before := snapshot()
-	await pointer_at(map.canvas.get_global_transform_with_canvas() * map._to_screen(map.canvas, app.catalogue.system(chosen_system)))
-	check(map.selected_system == chosen_system, "pointer selects the supplied buyer-route system")
-	await click_button(named_button(map.side, app.catalogue.station_name(station_id)), "choose buyer-route station")
+	await click_button(await map_station(map, station_id), "choose buyer-route station")
 	check(snapshot() == before and app.screen == station, "buyer route asks for confirmation before any travel")
 	await click_button(named_button(map.side, app.library.text(38)), "confirm real buyer-route departure")
 	check(app.screen is Flight and app.screen.space.using_jump_drive, "buyer route launches the fitted drive through the real station control")

@@ -51,15 +51,15 @@ func run() -> void:
 	check(armour_row != null, "the armour figure is listed")
 	var diff := int(theirs.armor) - int(mine.armor)
 	if diff == 0:
-		check(armour_row.get_child_count() == 1, "equal armour shows no difference")
+		check(armour_row.get_child_count() == 2, "equal armour shows no difference")
 	else:
-		var mark: String = (armour_row.get_child(1) as Label).text
+		var mark: String = (armour_row.get_child(2) as Label).text
 		check(mark == ("+%d" % diff if diff > 0 else "−%d" % -diff), "the armour lead or shortfall is shown (%s)" % mark)
 	dealer._select({})
 	await frames(2)
 	var plain := true
 	for r in dealer.detail.get_children():
-		if r is HBoxContainer and not r.is_queued_for_deletion() and r.get_child_count() > 1: plain = false
+		if r is HBoxContainer and not r.is_queued_for_deletion() and r.get_child_count() > 2: plain = false
 	check(plain, "your own ship is listed without comparisons")
 	# The shop sets a gun on the shelf against the gun you have fitted.
 	var Common = load("res://src/screens/station/common.gd")
@@ -79,7 +79,7 @@ func run() -> void:
 		for c in shop.detail.get_children():
 			if c.is_queued_for_deletion(): continue
 			if c is Label and (c as Label).text.contains(app.catalogue.item_name(fitted)): named = true
-			if c is HBoxContainer and c.get_child_count() > 1: marked += 1
+			if c is HBoxContainer and c.get_child_count() > 2: marked += 1
 		var differs := false
 		for a in [9, 11, 12]:
 			if app.catalogue.attr(gun, a) != app.catalogue.attr(fitted, a): differs = true
@@ -89,7 +89,7 @@ func run() -> void:
 		await frames(2)
 		var none := true
 		for c in shop.detail.get_children():
-			if not c.is_queued_for_deletion() and c is HBoxContainer and c.get_child_count() > 1 and not (c.get_child(0) is Button): none = false
+			if not c.is_queued_for_deletion() and c is HBoxContainer and c.get_child_count() > 2 and not (c.get_child(0) is Button): none = false
 		check(none, "an item in your own hold is not compared")
 	app.queue_free()
 	await process_frame

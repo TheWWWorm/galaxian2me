@@ -88,8 +88,7 @@ func station_depart(station_id: int) -> void:
 	var system: int = app.catalogue.system_of_station(station_id)
 	check(map._known(system), "recovery destination is already genuinely discovered")
 	if failures: return
-	await pointer_at(map.canvas.get_global_transform_with_canvas() * map._to_screen(map.canvas, app.catalogue.system(system)))
-	await click_button(named_button(map.side, app.catalogue.station_name(station_id)), "actual recovery destination")
+	await click_button(await map_station(map, station_id), "actual recovery destination")
 	await click_button(named_button(map.side, app.library.text(38)), "confirm actual fitted-drive departure")
 	if failures: return
 	await await_drive(app.screen, false, "tractor_route_%d" % station_id)
@@ -117,8 +116,7 @@ func flight_return(station_id: int) -> void:
 	check(snapshot() == before and Observation.capture(flight.space) == physical,
 		"return planning freezes the actual container, ammunition, defenses and crew contract")
 	var system: int = app.catalogue.system_of_station(station_id)
-	await pointer_at(map.canvas.get_global_transform_with_canvas() * map._to_screen(map.canvas, app.catalogue.system(system)))
-	await click_button(named_button(map.side, app.catalogue.station_name(station_id)), "the recorded recovery client destination")
+	await click_button(await map_station(map, station_id), "the recorded recovery client destination")
 	await shot("tractor_actual_client_return_confirmation")
 	await click_button(named_button(map.side, app.library.text(38)), "confirm actual post-retrieval drive")
 	if failures: return

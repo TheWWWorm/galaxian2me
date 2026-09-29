@@ -37,6 +37,14 @@ func run() -> void:
 		await frames(3)
 		var map = app.screen.current_panel
 		var c: Control = map.canvas
+		check(map.system_view == g.session.system_index, "the map opens on the system you are in")
+		# The system view drags and zooms its own camera.
+		var eye_before: Vector3 = map.eye_goal
+		map.pan_by(c, Vector2(80, 40))
+		map.zoom_at(c, c.size / 2.0, 2.0)
+		check(map.eye_goal.x != eye_before.x and map.eye_goal.z > eye_before.z, "the system view pans and zooms")
+		map.close_system()
+		await frames(1)
 		var known: Array = []
 		for i in app.catalogue.system_count():
 			if map._known(i): known.append(i)
@@ -75,10 +83,14 @@ func run() -> void:
 		spot = map._to_screen(c, app.catalogue.system(other))
 		click(c, spot, true)
 		click(c, spot, false)
-		check(map.selected_system == other, "a still click chooses the system under it")
+		check(map.selected_system == other and map.system_view == other, "one still click opens the system under it")
+		var eye_z: float = map.eye_goal.z
+		click(c, c.size / 2.0, true, MOUSE_BUTTON_WHEEL_UP)
+		check(map.eye_goal.z > eye_z, "the wheel zooms the open system")
+		map.close_system()
 		var zoom_before: float = map.zoom
 		click(c, c.size / 2.0, true, MOUSE_BUTTON_WHEEL_UP)
-		check(map.zoom > zoom_before, "the wheel zooms")
+		check(map.zoom > zoom_before, "the wheel zooms the chart")
 		# Recent trips: the last six systems reached, saved with the game.
 		var g2 = app._make_game()
 		g2.new_game()

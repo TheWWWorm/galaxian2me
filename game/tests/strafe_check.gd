@@ -41,8 +41,8 @@ func run() -> void:
 	app.settings.set_value("controls", "strafe", "never")
 	c.captured = true
 	check(not c.strafing(), "never strafe")
-	# Captured mouse motion turns the ship directly, paid out at the ship's
-	# turn rate, and stops as soon as the backlog is spent.
+	# Captured mouse motion turns the ship at once, eased over Deep's 80 ms
+	# response, and stops soon after the motion is spent.
 	c.captured = true
 	c.mouse_owns = true
 	c.mouse_turn = Vector2.ZERO
@@ -50,15 +50,21 @@ func run() -> void:
 	motion.relative = Vector2(12, 0)
 	c._input(motion)
 	var first: Dictionary = c.state(null)
-	check(float(first.yaw) > 0.9, "a flick right turns the ship right at full rate (%.2f)" % float(first.yaw))
+	check(float(first.yaw) > 0.3, "a flick right turns the ship right at once (%.2f)" % float(first.yaw))
 	var ticks := 1
 	while absf(float(c.state(null).yaw)) > 0.02 and ticks < 60: ticks += 1
-	check(ticks <= 4, "and it stops once the motion is spent (%d ticks)" % ticks)
+	check(ticks <= 20, "and it stops once the motion is spent (%d ticks)" % ticks)
 	motion.relative = Vector2(5000, 0)
 	c._input(motion)
+	var peak := 0.0
 	var spent := 0
-	while absf(float(c.state(null).yaw)) > 0.02 and spent < 100: spent += 1
-	check(spent <= int(c.MOUSE_BACKLOG_TICKS) + 1, "a huge swipe never queues more than a fifth of a second of turning (%d)" % spent)
+	while spent < 200:
+		var yaw := absf(float(c.state(null).yaw))
+		if yaw <= 0.02: break
+		peak = maxf(peak, yaw)
+		spent += 1
+	check(peak <= float(c.MOUSE_RATE) + 0.001, "a huge swipe turns no faster than the mouse ceiling (%.2f)" % peak)
+	check(spent < 120, "and its backlog is capped, not queued for seconds (%d ticks)" % spent)
 	var space = fs.space
 	var p = space.player
 	var heading: Vector3 = p.forward()

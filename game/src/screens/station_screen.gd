@@ -18,10 +18,16 @@ const DialoguePanel := preload("res://src/screens/dialogue_panel.gd")
 const Common := preload("res://src/screens/station/common.gd")
 const Portrait := preload("res://src/presentation/portrait.gd")
 
+## The station's name and logo at the top left.
+var top_bar: Control
+## The section on show (an index into SECTIONS).
+var section := -1
 ## Section labels (strings) and the story step each opens at.
 ## The original's highlight for the chosen entry of a list.
 const ORANGE := Color8(0xff, 0x9a, 0x2e)
 const SECTIONS := [[62, 5], [218, 13], [72, 9], [33, 13], [64, 0], [66, 0]]
+## The line icon before each section's name.
+const SECTION_ICONS := ["hangar", "chat", "map", "missions", "status", "game"]
 
 var app
 var game
@@ -70,6 +76,7 @@ func _build_scene() -> void:
 
 func _build_layout() -> void:
 	var top := HBoxContainer.new()
+	top_bar = top
 	top.set_anchors_preset(Control.PRESET_TOP_WIDE)
 	top.offset_left = 12; top.offset_top = 10; top.offset_right = -12
 	add_child(top)
@@ -82,7 +89,8 @@ func _build_layout() -> void:
 	names.add_child(header)
 	tech_label = UI.label("", 16)
 	names.add_child(tech_label)
-	# Held upright the rail gives way to the page; this leads back to the tiles.
+	# Closes the open page. Held upright, where the rail gives way to the
+	# page, it leads back to the tiles.
 	var gap := Control.new()
 	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(gap)
@@ -147,8 +155,19 @@ func _fit_orientation() -> void:
 	# A page that fills the screen (the lounge's bar) brings its own Back.
 	var full := current_panel != null and current_panel.has_meta("full_view")
 	rail.visible = current_panel != null and not tall and not full
-	back_button.visible = current_panel != null and tall and not full
-	content.offset_left = 12 if tall or full else 256
+	top_bar.visible = not full
+	# Upright it reads Back; beside the rail it is a close box that puts the
+	# page away to show the ship in its hangar again.
+	back_button.visible = current_panel != null and not full
+	back_button.text = app.library.text(74) if tall else "✕"
+	back_button.flat = not tall
+	back_button.add_theme_font_size_override("font_size", 16 if tall else 26)
+	# A page that fills the screen runs from edge to edge.
+	var edge := 0 if full else 12
+	content.offset_left = edge if tall or full else 256
+	content.offset_top = 0 if full else 96
+	content.offset_right = -edge
+	content.offset_bottom = -edge
 	if current_panel == null: return
 	var boxes: Array = [current_panel]
 	if current_panel is TabContainer: boxes = current_panel.get_children()
@@ -162,7 +181,9 @@ static func _stack(box: BoxContainer, tall: bool) -> void:
 		if not c is Control: continue
 		if not c.has_meta("wide_layout"): c.set_meta("wide_layout", [c.size_flags_vertical, c.custom_minimum_size.x])
 		var wide: Array = c.get_meta("wide_layout")
-		c.size_flags_vertical = Control.SIZE_EXPAND_FILL if tall else int(wide[0])
+		# Frames that wrap their content stay that size when stacked.
+		var wraps := int(wide[0]) == Control.SIZE_SHRINK_BEGIN
+		c.size_flags_vertical = Control.SIZE_EXPAND_FILL if tall and not wraps else int(wide[0])
 		c.custom_minimum_size.x = 0.0 if tall else float(wide[1])
 
 func _build_menu() -> void:
@@ -171,10 +192,11 @@ func _build_menu() -> void:
 	for i in SECTIONS.size():
 		var open: bool = step >= int(SECTIONS[i][1])
 		var b := UI.button(app.library.text(SECTIONS[i][0]), _open_section.bind(i))
-		if not open:
-			b.icon = app.library.texture("lock")
-			b.expand_icon = false
-			b.modulate = Color(0.7, 0.7, 0.7)
+		# The open section stays lit.
+		b.toggle_mode = true
+		b.set_pressed_no_signal(current_panel != null and i == section)
+		UI.add_icon(b, SECTION_ICONS[i] if open else "lock", 20)
+		if not open: b.modulate = Color(0.7, 0.7, 0.7)
 		menu.add_child(b)
 	# Departure cannot live exclusively in the Map section: that section
 	# unlocks after the opening mining flights have already been completed.
@@ -185,7 +207,7 @@ func _build_menu() -> void:
 	footer.visible = current_panel == null
 	credits_label.visible = current_panel == null
 	_fit_orientation()
-	if current_panel != null: (menu.get_child(0) as Control).grab_focus.call_deferred()
+	if current_panel != null and keyboard_nav: (menu.get_child(0) as Control).grab_focus.call_deferred()
 
 ## The home list: the original's six sections, locked ones marked.
 func _build_home() -> void:
@@ -200,34 +222,29 @@ func _build_home() -> void:
 	var first: Control = null
 	for i in SECTIONS.size():
 		var open: bool = step >= int(SECTIONS[i][1])
-		var b := _menu_item(app.library.text(SECTIONS[i][0]), open, _open_section.bind(i))
+		var b := _menu_item(app.library.text(SECTIONS[i][0]), open, _open_section.bind(i), SECTION_ICONS[i])
 		list.add_child(b)
 		if first == null: first = b
-	if first != null: first.grab_focus.call_deferred()
+	home_first = first
+	if first != null and keyboard_nav: first.grab_focus.call_deferred()
 
-## A plain list entry, orange when chosen, as the original's menus draw them.
-func _menu_item(text: String, open: bool, action: Callable) -> Button:
+## A plain list entry with its icon, orange when chosen, as the original's
+## menus draw them; a locked one shows the lock and stays dim.
+func _menu_item(text: String, open: bool, action: Callable, icon := "") -> Button:
 	var b := Button.new()
 	b.text = text
 	b.flat = true
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	b.focus_mode = Control.FOCUS_ALL
 	b.add_theme_font_size_override("font_size", 20)
-	b.add_theme_color_override("font_hover_color", ORANGE)
-	b.add_theme_color_override("font_focus_color", ORANGE)
-	b.add_theme_color_override("font_pressed_color", ORANGE)
-	b.add_theme_color_override("font_hover_pressed_color", ORANGE)
+	b.add_theme_constant_override("h_separation", 12)
+	b.add_theme_color_override("font_color", UI.TEXT if open else UI.TEXT_DIM)
+	for state in ["font_hover_color", "font_focus_color", "font_pressed_color", "font_hover_pressed_color"]:
+		b.add_theme_color_override(state, ORANGE)
 	var none := StyleBoxEmpty.new()
+	none.content_margin_left = 6; none.content_margin_top = 4; none.content_margin_bottom = 4
 	for state in ["normal", "hover", "pressed", "focus", "hover_pressed"]: b.add_theme_stylebox_override(state, none)
-	# Every entry keeps the lock's width so the names line up.
-	var lock: Texture2D = app.library.texture("lock")
-	if open:
-		var room: Vector2i = Vector2i(lock.get_size()) if lock != null else Vector2i(8, 8)
-		var blank := Image.create_empty(room.x, room.y, false, Image.FORMAT_RGBA8)
-		b.icon = ImageTexture.create_from_image(blank)
-	else:
-		b.icon = lock
-	b.expand_icon = false
+	UI.add_icon(b, icon if open else "lock", 22)
 	b.pressed.connect(action)
 	return b
 
@@ -282,7 +299,12 @@ func notify(text: String) -> void:
 func _open_section(index: int) -> void:
 	if game.session.story_step < int(SECTIONS[index][1]):
 		notify(app.library.text(257))
+		for i in mini(menu.get_child_count(), SECTIONS.size()):
+			(menu.get_child(i) as Button).set_pressed_no_signal(current_panel != null and i == section)
 		return
+	section = index
+	for i in mini(menu.get_child_count(), SECTIONS.size()):
+		(menu.get_child(i) as Button).set_pressed_no_signal(i == index)
 	match index:
 		0: show_panel(_hangar_panel())
 		1: _show(LoungePanel)
@@ -340,6 +362,9 @@ func close_panel() -> void:
 func _hangar_panel() -> Control:
 	var tabs := TabContainer.new()
 	tabs.add_theme_color_override("font_selected_color", Color.WHITE)
+	# The tabs sit over the pages' own panels, with no box of their own.
+	var bare := StyleBoxEmpty.new(); bare.content_margin_top = 10
+	tabs.add_theme_stylebox_override("panel", bare)
 	var shop := ShopPanel.new(); shop.station = self; shop.name = app.library.text(79)
 	tabs.add_child(shop)
 	var ship := ShipPanel.new(); ship.station = self; ship.name = app.library.text(77)
@@ -357,6 +382,24 @@ func _hangar_panel() -> Control:
 
 func refresh_ship_model() -> void:
 	view.replace_ship(int(game.session.ship.index), int(game.session.ship.faction))
+
+## Whether the keyboard or a pad is being used, rather than a pointer: only
+## then does a list open with its first entry lit, ready to move from.
+static var keyboard_nav := false
+var home_first: Control
+
+func _input(event: InputEvent) -> void:
+	if event is InputEventMouseButton or event is InputEventScreenTouch:
+		keyboard_nav = false
+	elif (event is InputEventKey or event is InputEventJoypadButton) and event.is_pressed():
+		var was := keyboard_nav
+		keyboard_nav = true
+		# The first key with nothing lit lights the first entry.
+		if not was and get_viewport().gui_get_focus_owner() == null and conversation == null:
+			var first: Control = home_first if current_panel == null else (menu.get_child(0) as Control if menu.get_child_count() > 0 else null)
+			if first != null and is_instance_valid(first) and first.is_visible_in_tree():
+				first.grab_focus()
+				get_viewport().set_input_as_handled()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel") and current_panel != null:

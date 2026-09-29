@@ -138,7 +138,7 @@ func pilot(reference: WeakRef) -> Dictionary:
 		if pilot_rock == null: return {}
 		var steer: Vector2 = space._steer_towards(space.player, pilot_rock.pos)
 		return {"yaw": steer.x, "pitch": steer.y,
-			"fire_pressed": space.target == pilot_rock and space.locked}
+			"fire_pressed": space.target == pilot_rock and space.locked and space.mining_target == null}
 	# After each mining goal the real campaign requests a return to station.
 	if step in [3, 5]:
 		var steer: Vector2 = space._steer_towards(space.player, space.station.pos)

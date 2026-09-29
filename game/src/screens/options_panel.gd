@@ -19,24 +19,68 @@ var refocus_preset := false
 func _init() -> void:
 	super._init("")
 
+const PAGE_ICONS := {"Audio": "audio", "Display": "display", "Controls": "controls", "Interface": "interface", "Game": "game"}
+
+## The page picker on the left and the chosen page in a titled panel.
+var content: UI.Frame
+var nav: VBoxContainer
+var nav_group := ButtonGroup.new()
+
 func _ready() -> void:
 	title = app.library.text(3)
+	set_chrome(false)
 	# Roomy on a desktop, never wider or taller than the window.
 	var room := get_viewport_rect().size
-	custom_minimum_size = Vector2(minf(760.0, room.x - 32.0), minf(600.0, room.y - 60.0))
-	var outer := VBoxContainer.new()
-	outer.add_theme_constant_override("separation", 8)
+	custom_minimum_size = Vector2(minf(880.0, room.x - 32.0), minf(620.0, room.y - 48.0))
+	var outer := HBoxContainer.new()
+	outer.add_theme_constant_override("separation", 14)
 	add_child(outer)
-	tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	tabs.tab_changed.connect(func(i): page = i)
-	outer.add_child(tabs)
-	var back := UI.button(app.library.text(65), func():
+	var side := UI.Frame.new("", false)
+	side.custom_minimum_size.x = minf(210.0, room.x * 0.26)
+	outer.add_child(side)
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 6)
+	side.add_child(column)
+	nav = VBoxContainer.new()
+	nav.add_theme_constant_override("separation", 6)
+	nav.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	column.add_child(nav)
+	var back := UI.icon_button(app.library.text(65), "back", func():
 		closed.emit()
 		queue_free())
-	back.alignment = HORIZONTAL_ALIGNMENT_CENTER
-	outer.add_child(back)
+	column.add_child(back)
+	content = UI.Frame.new(app.library.text(3))
+	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	outer.add_child(content)
+	tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	tabs.tabs_visible = false
+	# The pages sit straight in the titled panel, without a second frame.
+	tabs.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+	tabs.tab_changed.connect(func(i):
+		page = i
+		_sync_nav())
+	content.add_child(tabs)
 	_build()
 	back.grab_focus.call_deferred()
+
+## The picker's buttons follow the pages; the current one stays lit.
+func _sync_nav() -> void:
+	if nav == null: return
+	if nav.get_child_count() != tabs.get_tab_count():
+		for c in nav.get_children(): c.queue_free()
+		for i in tabs.get_tab_count():
+			var name := tabs.get_tab_title(i)
+			var b := UI.icon_button(name, str(PAGE_ICONS.get(name, "info")), func(): tabs.current_tab = i)
+			b.toggle_mode = true
+			b.button_group = nav_group
+			b.custom_minimum_size.y = 46
+			UI.flat_entry(b)
+			nav.add_child(b)
+	for i in nav.get_child_count():
+		(nav.get_child(i) as Button).set_pressed_no_signal(i == tabs.current_tab)
+	content.title = tabs.get_tab_title(tabs.current_tab)
+	content.icon = str(PAGE_ICONS.get(content.title, ""))
+	content.queue_redraw()
 
 func _build() -> void:
 	# A rebuild keeps the highlight on the row that had it (the n-th
@@ -65,6 +109,7 @@ func _build() -> void:
 	if now != null and old_page != null:
 		now.set_deferred("scroll_vertical", at)
 		if focus_index >= 0: _refocus.call_deferred(now, focus_index)
+	_sync_nav()
 
 func _focusables(root_node: Node) -> Array:
 	return root_node.find_children("*", "Control", true, false).filter(func(c): return c.focus_mode == Control.FOCUS_ALL and c.is_visible_in_tree())
@@ -91,7 +136,7 @@ func _new_page(name: String) -> void:
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	box = VBoxContainer.new()
 	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	box.add_theme_constant_override("separation", 6)
+	box.add_theme_constant_override("separation", 8)
 	scroll.add_child(box)
 	tabs.add_child(scroll)
 
@@ -346,7 +391,7 @@ func _input(event: InputEvent) -> void:
 	_build()
 
 func _group(text: String) -> void:
-	var l := UI.label(text.to_upper(), 13, UI.HIGHLIGHT.lightened(0.3))
+	var l := UI.label(text.to_upper(), 15, UI.ACCENT)
 	if box.get_child_count() > 0:
 		var gap := Control.new()
 		gap.custom_minimum_size.y = 6
@@ -357,17 +402,32 @@ func _note(text: String, color := UI.TEXT_DIM) -> void:
 	box.add_child(UI.paragraph(text, 13, color))
 
 func _toggle(text: String, section: String, key: String, fallback: bool, then := Callable()) -> void:
+	# The label, then the switch and its On/Off word at the right.
+	var row := HBoxContainer.new()
+	var l := UI.label(text, 16)
+	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	l.mouse_filter = Control.MOUSE_FILTER_STOP
+	row.add_child(l)
 	var c := CheckButton.new()
-	c.text = text
 	c.button_pressed = bool(app.setting(section, key, fallback))
+	c.tooltip_text = text
+	row.add_child(c)
+	var state := UI.label("", 15, UI.TEXT_DIM)
+	state.custom_minimum_size.x = 34
+	var show := func(on: bool): state.text = "On" if on else "Off"
+	show.call(c.button_pressed)
+	row.add_child(state)
+	l.gui_input.connect(func(e):
+		if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT: c.button_pressed = not c.button_pressed)
 	c.toggled.connect(func(on):
+		show.call(on)
 		app.set_setting(section, key, on)
 		if then.is_valid(): then.call(on))
-	box.add_child(c)
+	box.add_child(row)
 
 func _choice(text: String, names: Array, current: int, choose: Callable) -> OptionButton:
 	var row := HBoxContainer.new()
-	var l := UI.label(text, 15)
+	var l := UI.label(text, 16)
 	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(l)
 	var pick := OptionButton.new()
@@ -382,7 +442,7 @@ func _choice(text: String, names: Array, current: int, choose: Callable) -> Opti
 func _slider(text: String, section: String, key: String, fallback: float, low: float, high: float, step: float,
 		percent := false, format := "%.1f", then := Callable()) -> void:
 	var row := HBoxContainer.new()
-	var l := UI.label(text, 15)
+	var l := UI.label(text, 16)
 	l.custom_minimum_size.x = 200
 	row.add_child(l)
 	var s := HSlider.new()

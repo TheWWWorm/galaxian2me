@@ -21,6 +21,7 @@ func _ready() -> void:
 	add_theme_constant_override("separation", 10)
 	var left := UI.Frame.new(app.library.text(40))
 	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	left.size_flags_stretch_ratio = 1.5
 	add_child(left)
 	var l := Common.scroll_list()
 	left.add_child(l[0])
@@ -32,11 +33,12 @@ func _ready() -> void:
 	right.add_child(r[0])
 	hold_list = r[1]
 	var info := UI.Frame.new(app.library.text(212))
-	info.custom_minimum_size.x = 300
+	info.custom_minimum_size.x = 340
 	add_child(info)
-	detail = VBoxContainer.new()
+	var d := Common.scroll_list()
+	info.add_child(d[0])
+	detail = d[1]
 	detail.add_theme_constant_override("separation", 6)
-	info.add_child(detail)
 	# The original notes the lowest and highest prices seen as the hangar opens.
 	var here: int = game.session.system_index
 	for e in game.shelf(): game.session.record_price(int(e.id), int(e.price), here)
@@ -54,12 +56,12 @@ func _fill() -> void:
 	for e in game.shelf():
 		if int(e.count) <= 0: continue
 		var id := int(e.id)
-		shelf_list.add_child(Common.row(Common.item_icon(app.library, id), "%s  ×%d" % [cat.item_name(id), int(e.count)], UI.money(int(e.price)), _select.bind(id, 0)))
+		shelf_list.add_child(Common.row(Common.item_icon(app.library, id), "%s  ×%d" % [cat.item_name(id), int(e.count)], UI.money(int(e.price)), _select.bind(id, 0), id == selected and selected_side == 0))
 	var keys: Array = game.session.cargo.keys()
 	keys.sort_custom(func(a, b): return int(a) < int(b))
 	for k in keys:
 		var id := int(k)
-		hold_list.add_child(Common.row(Common.item_icon(app.library, id), "%s  ×%d" % [cat.item_name(id), game.session.cargo_count(id)], UI.money(game.price_here(id)), _select.bind(id, 1)))
+		hold_list.add_child(Common.row(Common.item_icon(app.library, id), "%s  ×%d" % [cat.item_name(id), game.session.cargo_count(id)], UI.money(game.price_here(id)), _select.bind(id, 1), id == selected and selected_side == 1))
 	var used: int = game.session.cargo_used()
 	var cap: int = int(game.session.ship_stats().cargo_capacity)
 	hold_list.add_child(UI.label("%s: %d / %d t" % [app.library.text(61), used, cap], 14, UI.TEXT_DIM))
@@ -82,16 +84,25 @@ func _detail() -> void:
 		return
 	var cat = app.catalogue
 	var id := selected
-	detail.add_child(Common.item_icon(app.library, id))
-	detail.add_child(UI.label(cat.item_name(id), 18))
-	detail.add_child(UI.label("%s · %s %d" % [cat.type_name(cat.type(id)), app.library.text(37), cat.tech(id)], 14, UI.TEXT_DIM))
+	# The item's picture beside its name, kind and tech level.
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 12)
+	head.add_child(Common.item_icon(app.library, id))
+	var names := VBoxContainer.new()
+	names.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(names)
+	var name_label := UI.label(cat.item_name(id), 20)
+	name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	names.add_child(name_label)
+	names.add_child(UI.label("%s · %s %d" % [cat.type_name(cat.type(id)), app.library.text(37), cat.tech(id)], 14, UI.TEXT_DIM))
+	detail.add_child(head)
 	# Set against what is fitted in its place, the way the dealer sets hulls.
 	var fitted := Common.fitted_counterpart(game.session, cat, id) if selected_side == 0 else -1
 	if fitted >= 0:
 		detail.add_child(UI.label("Compared with your %s" % cat.item_name(fitted), 13, UI.TEXT_DIM))
 	for r in Common.fact_rows(app.library, cat, id, fitted): detail.add_child(r)
 	var price: int = game.price_here(id)
-	detail.add_child(UI.label("%s: %s" % [app.library.text(36), UI.money(price)], 16, UI.TEXT_GOOD))
+	detail.add_child(Common.price_line(app.library.text(36), UI.money(price)))
 	var rec: Array = game.session.price_record(id)
 	if rec.size() == 4:
 		for side in [[0, 93, 95], [2, 94, 96]]:
@@ -103,15 +114,22 @@ func _detail() -> void:
 	if available <= 0: return
 	amount = clampi(amount, 1, available)
 	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
 	detail.add_child(row)
-	row.add_child(UI.button("−", func(): amount = maxi(1, amount - 1); _detail()))
-	var n := UI.label("%d" % amount, 16)
-	n.custom_minimum_size.x = 40
-	n.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	row.add_child(n)
-	row.add_child(UI.button("+", func(): amount = mini(available, amount + 1); _detail()))
-	row.add_child(UI.button("Max", func(): amount = available; _detail()))
-	var action := UI.button(("Buy" if selected_side == 0 else app.library.text(137)) + "  (" + UI.money(price * amount) + ")", _trade)
+	for b in [UI.button("−", func(): amount = maxi(1, amount - 1); _detail()), null,
+			UI.button("+", func(): amount = mini(available, amount + 1); _detail()),
+			UI.button("Max", func(): amount = available; _detail())]:
+		if b == null:
+			var n := UI.label("%d" % amount, 18)
+			n.custom_minimum_size.x = 44
+			n.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			row.add_child(n)
+			continue
+		b.alignment = HORIZONTAL_ALIGNMENT_CENTER
+		b.custom_minimum_size = Vector2(44, 40)
+		row.add_child(b)
+	var action := Common.action_button(("Buy" if selected_side == 0 else app.library.text(137)) + "  (" + UI.money(price * amount) + ")",
+		"cart" if selected_side == 0 else "sell", _trade)
 	action.disabled = selected_side == 1 and not game.can_sell_cargo(id)
 	detail.add_child(action)
 

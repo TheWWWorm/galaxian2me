@@ -235,8 +235,10 @@ func _draw() -> void:
 	if space.autopilot:
 		var pilot: String = app.library.text(292).to_upper()
 		if space.time_scale > 1: pilot += "  ×%d" % space.time_scale
-		elif not touch_layout and space.time_warp_allowed(): pilot += "  ·  %s: faster" % Prefs.key_name("time_warp")
+		elif not touch_layout and space.time_warp_allowed(2): pilot += "  ·  %s: faster" % Prefs.key_name("time_warp")
 		_centered(Vector2(size.x / 2.0, centre.y + 64 * k), pilot, 12, FRIEND, true)
+	elif space.time_scale > 1:
+		_centered(Vector2(size.x / 2.0, centre.y + 64 * k), "TIME ×%d" % space.time_scale, 12, FRIEND, true)
 	var hint := action_hint() if bool(app.setting("interface", "hints", true)) else ""
 	if not hint.is_empty():
 		# Above the crosshair: the original captions landmarks below and right of it.
@@ -247,8 +249,8 @@ func _draw() -> void:
 		if four == ["Up", "Left", "Down", "Right"]: keys_text = "Arrows"
 		elif four == ["W", "A", "S", "D"]: keys_text = "WASD"
 		var steer := ("Mouse / " if not touch_layout else "") + keys_text
-		var keys := "%s steer  ·  %s fire  ·  %s boost  ·  %s autopilot  ·  %s target  ·  %s actions" % [steer,
-			Prefs.key_name("fire"), Prefs.key_name("boost"), Prefs.key_name("autopilot"),
+		var keys := "%s steer  ·  %s fire  ·  %s boost  ·  %s autopilot  ·  %s fly to…  ·  %s target  ·  %s actions" % [steer,
+			Prefs.key_name("fire"), Prefs.key_name("boost"), Prefs.key_name("autopilot"), Prefs.key_name("autopilot_menu"),
 			Prefs.key_name("next_target"), Prefs.key_name("action_menu")]
 		var room := size.x - 2.0 * (320.0 * k + MARGIN * 2.0)
 		var foot := size.y - MARGIN - 4 * k
@@ -741,16 +743,17 @@ func _draw_current_lock(size: Vector2, S: float) -> void:
 ## What the fire button does to the locked station, gate or asteroid, or
 ## that holding it in the crosshair locks it; empty when nothing applies.
 func action_hint() -> String:
-	var t: Body = space.target
-	if t == null or not t.alive or t.is_ship() or space.autopilot or space.mining != null: return ""
-	if not space.locked:
-		# Asteroids drift across the reticle all the time in a field; only
-		# places to fly to get the reminder.
-		return "Hold it in the crosshair to lock on" if t.kind in [Body.Kind.STATION, Body.Kind.GATE, Body.Kind.WORMHOLE] else ""
-	var what: String = {"dock": "fly in and dock", "gate": "fly into the gate",
-		"wormhole": "fly into the wormhole", "mine": "mine"}.get(space.target_action(), "")
-	if what.is_empty(): return ""
 	var press := "Fire" if touch_layout else "%s / left click / RT" % Prefs.key_name("fire")
+	if space.mining_target != null:
+		return "%s: stop mining and keep the ore" % press if space.mining != null else "%s: cancel" % press
+	var t: Body = space.target
+	if t == null or not t.alive or t.is_ship() or space.autopilot: return ""
+	# Asteroids drift across the reticle all the time in a field; only
+	# places to fly to get the reminder while still being scanned.
+	if not space.locked and t.kind == Body.Kind.WORMHOLE: return "Hold it in the crosshair to lock on"
+	var what: String = {"dock": "fly in and dock", "gate": "fly into the gate",
+		"travel": "fly to %s" % t.name, "wormhole": "fly into the wormhole", "mine": "mine"}.get(space.target_action(), "")
+	if what.is_empty(): return ""
 	return "%s: %s" % [press, what]
 
 ## Bottom centre: the locked or selected object.
@@ -886,7 +889,8 @@ func _draw_markers(size: Vector2) -> void:
 		if b.kind in [Body.Kind.ARRIVAL, Body.Kind.ASTEROID]: continue
 		var is_target: bool = b == t
 		var on_course: bool = b == course and not is_target
-		if b.kind == Body.Kind.STAR and not is_target and not on_course and not original_style(): continue
+		var quest := _quest_icon(b)
+		if b.kind == Body.Kind.STAR and not is_target and not on_course and not original_style() and quest.is_empty(): continue
 		var nav: bool = b.kind in [Body.Kind.STATION, Body.Kind.GATE, Body.Kind.WORMHOLE, Body.Kind.MOTHERSHIP]
 		var threat: bool = b.is_ship() and b.hostile and b.combat_active
 		var world: Vector3 = p.pos + space._star_direction(b) * 200000.0 if b.kind == Body.Kind.STAR else b.pos
@@ -918,15 +922,35 @@ func _draw_markers(size: Vector2) -> void:
 			elif original_style() and b.kind == Body.Kind.STAR and bool(app.setting("interface", "labels", true)):
 				# Radar.java names each planet in view above and to its right.
 				_text(at + Vector2(20, -20) * k, b.name, 11, UI.TEXT)
-			elif (nav or is_target or on_course) and bool(app.setting("interface", "labels", true)):
+			elif (nav or is_target or on_course or not quest.is_empty()) and bool(app.setting("interface", "labels", true)):
 				var label: String = b.name if not b.name.is_empty() else app.library.text(270)
 				# The chosen destination's way is labelled in gold.
 				_text(at + Vector2(24, 5) * k, label + ("  ·  " + _metres(dist) if dist >= 0.0 else ""), 11, Color(COURSE if on_course else color, 0.95))
+			# The map's story or job marker beside a place a mission waits at.
+			if not quest.is_empty():
+				var mark := _tex(quest)
+				if mark != null:
+					var sz := mark.get_size() * SCALE * 1.75
+					draw_texture_rect(mark, Rect2(at + Vector2(-20, 0) * k - Vector2(sz.x, sz.y / 2.0), sz), false)
 		elif on_course:
 			_edge_arrow(size, edge, world, COURSE, true, _metres(dist) if dist >= 0.0 else "")
 		elif is_target or (threat and dist < RADAR_REACH) or b == space.station:
 			_edge_arrow(size, edge, world, color, is_target, _metres(dist) if is_target and dist >= 0.0 else "")
 	_draw_waypoint(size, edge)
+
+## The map's marker for a planet or station where the story ("!" in gold)
+## or the accepted job (in grey) continues; "" when none does.
+func _quest_icon(b: Body) -> String:
+	var sid := -2
+	if b.kind == Body.Kind.STAR: sid = b.station_id
+	elif b == space.station: sid = int(app.game.session.station_id)
+	else: return ""
+	var session = app.game.session
+	var mission: Dictionary = session.story_mission if session.story_mission is Dictionary else {}
+	if not mission.is_empty() and bool(mission.get("visible", true)) and int(mission.get("station", -2)) == sid:
+		return "menu_map_mainmission"
+	if not session.job.is_empty() and int(session.job.get("station", -2)) == sid: return "menu_map_sidemission"
+	return ""
 
 ## Within this range (the original's 24,000 units) a ship shows its bars.
 const NEAR_BARS := 24000.0
@@ -940,7 +964,7 @@ func _draw_ship_bars(b: Body, at: Vector2) -> void:
 	if sheet == null: return
 	var frame := {"enemy": 0, "friend": 6}.get(_standing(b), 4) as int
 	var hull := float(b.hull) / maxf(1.0, float(b.hull_max))
-	var emp := float(b.emp) / maxf(1.0, float(b.emp_max)) if b.emp_max > 0 else 1.0
+	var emp := float(b.emp) / maxf(1.0, float(b.emp_max)) if b.emp_max > 0 else 0.0
 	for bar in [[frame, hull, 10.0], [2, emp, 15.0]]:
 		var origin: Vector2 = at + Vector2(float(bar[2]), -8.0) * SCALE
 		draw_texture_rect_region(sheet, Rect2(origin, Vector2(2, 16) * SCALE), Rect2(int(bar[0]) * 2 + 2, 0, 2, 16))

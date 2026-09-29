@@ -144,11 +144,9 @@ func preparation_trip(station_id: int) -> void:
 	var system: int = app.catalogue.system_of_station(station_id)
 	check(map._known(system), "source destination is genuinely discovered before any map interaction")
 	if failures: return
-	await pointer_at(map.canvas.get_global_transform_with_canvas() * map._to_screen(map.canvas, app.catalogue.system(system)))
 	await shot("recovery_map_pick_%d" % station_id)
-	check(map.selected_system == system, "real pointer selects the equipment source's supplied system")
 	if failures: return
-	await click_button(named_button(map.side, app.catalogue.station_name(station_id)), "actual equipment-source station")
+	await click_button(await map_station(map, station_id), "actual equipment-source station")
 	await click_button(named_button(map.side, app.library.text(38)), "confirm equipment sourcing departure")
 	check(app.screen is Flight and app.screen.space.using_jump_drive, "source trip begins a native fitted-drive flight")
 	if failures: return

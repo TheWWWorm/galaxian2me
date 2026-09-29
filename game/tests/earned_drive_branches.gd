@@ -160,16 +160,14 @@ func station_drive() -> void:
 	var station = app.screen
 	var map = station.current_panel
 	var initial := snapshot()
-	await pointer_at(map.canvas.get_global_transform_with_canvas() * map._to_screen(map.canvas, app.catalogue.system(chosen_system)))
-	check(map.selected_system == chosen_system, "viewport pointer selects the actual non-linked station system")
-	await click_button(named_button(map.side, app.catalogue.station_name(chosen_station)), "station Map destination")
+	await click_button(await map_station(map, chosen_station), "station Map destination")
 	check(snapshot() == initial and app.game.destination.is_empty() and app.screen == station,
 		"station destination confirmation precedes any departure or resource mutation")
 	await shot("station_drive_confirmation")
 	await click_button(named_button(map.side, app.library.text(39)), "cancel station drive")
 	check(snapshot() == initial and app.screen == station and app.game.destination.is_empty(),
 		"cancel station drive preserves the entire station state")
-	await click_button(named_button(map.side, app.catalogue.station_name(chosen_station)), "reselect station Map destination")
+	await click_button(await map_station(map, chosen_station), "reselect station Map destination")
 	await click_button(named_button(map.side, app.library.text(38)), "confirm station drive departure")
 	check(app.screen is Flight and app.screen.space.using_jump_drive,
 		"confirmed station Map departure automatically activates fitted drive in a native origin flight")

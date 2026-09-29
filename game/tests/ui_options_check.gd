@@ -27,9 +27,9 @@ func run() -> void:
 	var b := Button.new()
 	app.screen.add_child(b)
 	await process_frame
-	check(probe.get_theme_icon("unchecked").get_size() == Vector2(40, 20), "switches use the game's drawn toggle")
+	check(probe.get_theme_icon("unchecked").get_size() == Vector2(44, 24), "switches use the game's drawn toggle")
 	var box := b.get_theme_stylebox("normal") as StyleBoxFlat
-	check(box != null and box.bg_color.is_equal_approx(UI.DEEP.darkened(0.2)), "buttons use the game's panels, not the engine's")
+	check(box != null and box.bg_color.is_equal_approx(Color(UI.DEEP, 0.85)), "buttons use the game's panels, not the engine's")
 	var g = app._make_game()
 	g.new_game()
 	g.session.story_step = 20
