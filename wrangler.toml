@@ -4,7 +4,8 @@
 name = "galaxian2me"
 main = "worker.js"
 compatibility_date = "2026-09-29"
-workers_dev = true
+workers_dev = false
+routes = [{ pattern = "galaxian2me.wwworm.com", custom_domain = true }]
 
 [assets]
 directory = "./public"

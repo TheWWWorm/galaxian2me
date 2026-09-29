@@ -1,6 +1,6 @@
 # Galaxy on Fire 2 — J2ME remake
 
-Play the **mobile (J2ME) Galaxy on Fire 2** as a modern game on Windows, Linux, macOS and Android, using your own copy of the original.
+Play the **mobile (J2ME) Galaxy on Fire 2** as a modern game on Windows, Linux, macOS, Android and in the browser, using your own copy of the original.
 
 This is a separate game engine, built in Godot, in the spirit of OpenMW and fheroes2: it reads the Galaxy on Fire 2 JAR you already own, converts its models, textures, interface art, text, music and game tables on your own device, and plays them with natively written flight, trading, combat and story systems.
 
@@ -24,6 +24,13 @@ Download the package for your system from the [Releases](https://github.com/TheW
 - **Linux (x86-64):** extract the ZIP and run `gof2-remake.x86_64`. If your file manager dropped the executable permission, run `chmod +x gof2-remake.x86_64` first.
 - **macOS (Apple silicon and Intel):** extract the ZIP and open the app. It is not signed or notarized, so macOS may block the first start; allow it under **System Settings → Privacy & Security**.
 - **Android (7 or newer, ARM64 or x86-64):** install the APK (allow installing from your browser or file manager when asked). **Choose JAR** opens the system file picker.
+- **Web:** open [galaxian2me.wwworm.com](https://galaxian2me.wwworm.com/) and choose your JAR. It is converted inside your browser and never uploaded. The page stops responding while it converts; keep the tab open until it finishes.
+
+### Playing in a browser
+
+On iPhone or iPad, open the site in Safari and choose **Share → Add to Home Screen**, then start the game from its Home Screen icon to play full screen.
+
+Use a browser with WebGL 2 and persistent site storage. Converted content and saves belong to that browser and site; clearing site data removes them, and private browsing may not keep them. The desktop and Android versions run better on low-memory devices.
 
 Every version needs a Galaxy on Fire 2 J2ME JAR that you provide. The game does not look for a particular build, file name or checksum: it tries to read whatever JAR you give it and tells you if something in it cannot be used.
 
