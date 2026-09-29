@@ -1,0 +1,13 @@
+# Serves the prepared Web export in public/ as Workers static assets.
+# worker.js streams engine files that were split to stay under the asset size
+# limit (see parts.json) and adds the headers the engine needs.
+name = "galaxian2me"
+main = "worker.js"
+compatibility_date = "2026-09-29"
+workers_dev = true
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = true
+not_found_handling = "none"

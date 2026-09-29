@@ -1,10 +1,31 @@
-# Galaxy on Fire 2 — J2ME remake engine
+# Galaxy on Fire 2 — J2ME remake
 
-Play the **mobile (J2ME) Galaxy on Fire 2** as a modern desktop game, using your own copy of the original.
+Play the **mobile (J2ME) Galaxy on Fire 2** as a modern game on Windows, Linux, macOS and Android, using your own copy of the original.
 
-This is a separate game engine, built in Godot, in the spirit of OpenMW and fheroes2: it reads the Galaxy on Fire 2 JAR you already own, converts its models, textures, interface art, text, music and game tables on your own machine, and plays them with natively written flight, trading, combat and story systems.
+This is a separate game engine, built in Godot, in the spirit of OpenMW and fheroes2: it reads the Galaxy on Fire 2 JAR you already own, converts its models, textures, interface art, text, music and game tables on your own device, and plays them with natively written flight, trading, combat and story systems.
 
 > **You need your own copy of the game.** No game data ships with this engine — no models, textures, music, sound, text or interface art. Nothing is downloaded for you.
+
+## Screenshots
+
+Captured in the remake at 3840×2160 with content converted from a supplied JAR.
+
+![Title screen](docs/screenshots/title.png)
+![Hangar](docs/screenshots/hangar.png)
+![Combat](docs/screenshots/combat.png)
+![Space Lounge](docs/screenshots/lounge.png)
+![System map](docs/screenshots/map.png)
+
+## Download and install
+
+Download the package for your system from the [Releases](https://github.com/TheWWWorm/galaxian2me/releases) page.
+
+- **Windows (x86-64):** extract the ZIP and run `gof2-remake.exe`. Windows may warn about an unrecognised app; choose **More info → Run anyway**.
+- **Linux (x86-64):** extract the ZIP and run `gof2-remake.x86_64`. If your file manager dropped the executable permission, run `chmod +x gof2-remake.x86_64` first.
+- **macOS (Apple silicon and Intel):** extract the ZIP and open the app. It is not signed or notarized, so macOS may block the first start; allow it under **System Settings → Privacy & Security**.
+- **Android (7 or newer, ARM64 or x86-64):** install the APK (allow installing from your browser or file manager when asked). **Choose JAR** opens the system file picker.
+
+Every version needs a Galaxy on Fire 2 J2ME JAR that you provide. The game does not look for a particular build, file name or checksum: it tries to read whatever JAR you give it and tells you if something in it cannot be used.
 
 ## Getting started
 
@@ -16,7 +37,7 @@ Saves are kept per converted game in the same user folder. Each completed dockin
 
 Docking repairs your ship's hull, armour and shields at no charge before the checkpoint is written.
 
-To travel to another system, fly to the jump gate: pick a linked system on the station **Map**, depart and fly into the gate. Within a system, lock a planet or star and let the autopilot take you there.
+To travel to another system, fly to the jump gate: pick a linked system on the station **Map**, depart and fly into the gate. Within a system, point at a planet and fire (one click, even while it is still being scanned) to travel there; a planet where the story or your job continues carries the map's marker in flight.
 
 ## What is there
 
@@ -70,7 +91,7 @@ Fit the **Khador Drive** into an equipment slot to use it; carrying it in the ho
 
 **Other ships** fly as the original's pilots do: they stay upright and turn at the ship handling of the phone game, pick a new target every few seconds, break away to the side when they get close and come round for another pass, fire only when you sit in a narrow cone ahead of them, and boost now and then or after heavy damage. They steer around the station's modules and asteroids. Local traffic patrols a square around the station, ships launch from the station and jump away, freighters drift through, and raiders of the system's enemies come in waves by its safety. Destroyed locals are replaced from the station over time.
 
-**Each flight opens** as the original's does: for seven seconds the camera holds still and watches your ship leave, with the faction emblem, station, system and its safety at the top left and one of the game's tips along the bottom. A key, click or tap skips it, and **Options → Interface → Launch sequence** turns it off. Ships and the camera move smoothly at any display rate: the view draws between the simulation's fixed steps.
+**Each flight opens** as the original's does: for seven seconds the camera waits ahead of the station, a little to one side, and watches your ship stream out and past it, with the faction emblem, station, system and its safety at the top left and one of the game's tips along the bottom. A key, click or tap skips it, and **Options → Interface → Launch sequence** turns it off. Ships and the camera move smoothly at any display rate: the view draws between the simulation's fixed steps.
 
 **The flight display** is the original's by default: the station in view carries the original's bracket and caption (its name, Tec Level and distance), a jump gate its name and distance, and planets and stars in view their names; its corner panels; the booster, autopilot and auto-fire icons at the top left; the cloak, menu and hold icons at the top right; the armour and shield bars at the foot; the chosen secondary weapon with its count; and the hull in percent once it is damaged. The **Extended** display (Options → Interface → Flight display) groups the instruments on slim translucent plates without outlines: location, cargo, credits and the current objective at the top left; hull, armour, shield, booster and cloak at the top right; the weapon bank with reload gauges at the bottom left; the selected target at the bottom centre; and a radar scope at the bottom right, whose stems show whether contacts lie above or below you. The scope is this engine's addition (the original marks ships only on screen and at its edges) and can be turned off under Options → Interface. Stations, gates and the target carry name and range labels, and arrows at the screen edge point to the target, the station and nearby threats out of view. The crosshair sits where the original puts it, on the guns' line of fire ahead of the ship, a little below the screen centre in the chase view. Arcs around it show where hits come from. An asteroid under the crosshair is scanned there, as in the original: the scan ring fills once it has been held for half a second, and once it is locked the full ring blinks. The original HUD then names the locked object at the bottom right: an asteroid's ore icon, class and ore name, a ship's name and hull, or a station's name. With control hints on, a line above the crosshair says what the fire button will do to a locked station, gate, wormhole or asteroid (dock, fly in, mine), or, for a station, gate or wormhole, that it still needs holding in the crosshair to lock. Ships within the original's range carry its two small bars beside them: hull in their standing's colour and EMP charge in blue. Every ship's engines burn with the original's flames, which lengthen while the booster runs and go out while the drill is in a rock and wherever a story scene puts them out. Fighters also draw the original's engine trails: blue-white behind most ships, white through yellow to red behind pirates and Voids. A message already on screen is not repeated; it simply stays up longer. Held upright, a phone gets an upright canvas: the flight HUD stacks its top panels and puts the radio box under them, the camera widens, and in a station the section rail gives way to a **Back** button while each page stacks its columns. On touch screens the radar moves to the top right and the vitals and weapons stack down the top left, clear of the stick and buttons. On phones, the panels, menus and touch controls keep clear of the camera cutout and rounded corners on both sides, while the 3D view still fills the screen.
 
@@ -78,19 +99,19 @@ Fit the **Khador Drive** into an equipment slot to use it; carrying it in the ho
 
 **Pilot level** starts at 1 and rises as in the original: while docked, experience from kills, half the wingmen ever hired, every fifty tons of ore, cores and twice the freelance missions done is compared with the mark of the last level, and passing 1.3 times that mark raises the level by one. The level strengthens enemies and raises mission rewards and hired pilots' fees, capped where the original caps it.
 
-**Space Lounge** is the station's bar in 3D, as in the original: the guests stand about the room, pointing at someone names them and their trade over their head, and clicking them (or Chat) starts the conversation. Conversations offer the original's answers: accept, decline, have the offer repeated, and for jobs elsewhere ask where it is and how difficult it will be; traders let you look at the goods first.
+**Space Lounge** is the station's bar in 3D, as in the original: the camera takes in the whole room with every guest's name and trade over their head, and clicking someone starts the conversation; the ✕ in the title strip (or Esc) ends it, then leaves the lounge. Guests never stand inside a table: the ring of tables turns clear of them, and anyone still touching one steps aside. Conversations offer the original's answers: accept, decline, have the offer repeated, and for jobs elsewhere ask where it is and how difficult it will be; traders let you look at the goods first.
 
 The **cloaking device** is used from **Actions** or with V: other ships lose track of you until its duration ends, then it recharges. On ships with a **turret**, C switches to the turret view: steering swings the turret while the ship flies on, and fire uses the turret. The ship otherwise levels its wings whenever you stop steering, as in the original. Ships drop crates holding one or two kinds of goods from the original's loot tables.
 
 **Looking around**: hold Alt and move the mouse, or use the gamepad's right stick, to swing the camera round your ship; it eases back behind the ship when you let go. The crosshair hides while the view is turned away from the line of fire.
 
-**Time speed-up**: while the autopilot flies and no enemy is within 25 km, T (or the touch **Faster** button) runs time at 2×, 4× or 8×. It drops back to normal as soon as an enemy comes near, the autopilot disengages, a conversation opens or docking begins.
+**Time speed-up**: T (or the touch **Faster** button) runs time at 2× at any moment in flight. While the autopilot flies and no enemy is within 25 km, further presses go on to 4× and 8×; those fall back to 2× as soon as an enemy comes near, the autopilot disengages or docking begins. A conversation stops the speed-up while it is open.
 
 Actions that cannot be undone ask first, with the game's own questions: saving over a used slot, loading over the current game, leaving for the main menu (from flight this loses progress since the last save) and abandoning a contract. **No** is highlighted, and Esc or B answers it.
 
-With a keyboard or controller, opening a station section moves the highlight to its first entry. Changing an amount, buying, selling or fitting keeps the highlight on the same button, and so does changing a setting in Options. In the Space Lounge, left and right move between the guests, turning to each and showing their name and trade before you talk to them.
+With a keyboard or controller, opening a station section moves the highlight to its first entry. Changing an amount, buying, selling or fitting keeps the highlight on the same button, and so does changing a setting in Options. In the Space Lounge, left and right move the highlight between the guests before you talk to them.
 
-The station **Map** zooms with the mouse wheel, a pinch, + / − or the pad triggers, and pans by dragging; a click or tap that does not move picks a system, and the arrow keys or D-pad step between systems and bring the chosen one into view. **Zoom**, Enter, the pad's A or a double click opens the chosen system as the original draws it: the sun, the planets on their orbits, the chosen station in orange with its Tec Level, and markers for stations already visited, story and job destinations and the jump gate (the **Key** beside the chart explains them). In a system, pick a station the same ways and choose it again to fly there; **Back**, Esc or a right click returns to the galaxy. Type in its search field to list matching stations. Each system is the original's star sprite in its star's colour, and dotted lines join this system to the ones its jump gate reaches, as the game's map help describes. A fading gold line traces your last six trips between systems. Dashed lines show the fewest jumps through known systems to the story's destination (yellow) and your job's (blue). **Missions** shows each destination with its owner's emblem and how many jumps away it is, and its **Map** button opens the chart on that system. The card beside the chart shows the station under the pointer or highlight, turning in a small showroom.
+The station **Map** zooms with the mouse wheel, a pinch, + / − or the pad triggers, and pans by dragging; the map opens on the system you are in. On the galaxy chart a click or tap that does not move opens a system, and the arrow keys or D-pad step between systems and bring the chosen one into view (**Zoom**, Enter or the pad's A opens it). A system is drawn as the original draws it: the sun, the planets on their orbits, the chosen station in orange with its Tec Level, and markers for stations already visited, story and job destinations and the jump gate (the **Key** beside the chart explains them). Click a planet to choose it; the card beside the chart shows it with a **Depart →** button, and a double click or Enter asks the same. After launching, the autopilot sets course for the chosen planet, or for the jump gate when it lies in another system, and the ship travels there once its nose is on the planet. **Back**, Esc or a right click returns to the galaxy. Type in its search field to list matching stations. Each system is the original's star sprite in its star's colour, and dotted lines join this system to the ones its jump gate reaches, as the game's map help describes. A fading gold line traces your last six trips between systems. Dashed lines show the fewest jumps through known systems to the story's destination (yellow) and your job's (blue). **Missions** shows each destination with its owner's emblem and how many jumps away it is, and its **Map** button opens the chart on that system. The card beside the chart shows the station under the pointer or highlight, turning in a small showroom.
 
 **Saves** keep the copy they replace as a backup. If a save is ever damaged, loading it falls back to that copy and tells you so. **Export save…** (station Game Options) writes the current game to a file, and **Import save…** (Load game, in the title or at a station) loads one, to carry a game between devices. An export holds the save only, never the game's content, and loads only where the same game was imported.
 
@@ -132,12 +153,13 @@ Replacements affect only what you see and hear; the game's rules always use the 
 | Secondary weapon | E or right mouse button | LB |
 | Booster | Shift | A |
 | Autopilot | Q | Y |
+| Autopilot list (station, gate, asteroid field, waypoint…) | R | — |
 | Next target | Tab | X |
 | Auto fire | F | — |
 | Rear view, or turret view on ships with a turret | C | Right stick click |
 | Cloaking device | V | — |
 | Look around the ship | Hold Alt and move the mouse | Right stick |
-| Time speed-up during autopilot | T | — |
+| Time speed-up | T | — |
 | Photo mode | P | — |
 | Save a picture | F12 | — |
 | Fullscreen | F11 | — |
@@ -162,81 +184,19 @@ The in-flight route map sets a destination without jumping immediately. Use a ph
 
 Set **Options → Touch controls** to **Automatic**, **On** or **Off**. Automatic enables the overlay on mobile platforms or when Godot detects a touchscreen. In flight, pressing a key, clicking or moving a real mouse, or using a gamepad puts it away and gives the HUD its desktop layout, with mouse steering, until the screen is touched again. Mouse events generated by a touch and slight stick drift do not count. On keeps the overlay whatever you press, and also lets a desktop touchscreen use the same controls. **Boost** and **Secondary** appear only while a booster or a secondary launcher is fitted. Tap **Fire** twice quickly for automatic fire; the button's rim lights up and it reads **AUTO**, and one tap stops it. While a station, gate, wormhole or asteroid is locked, **Fire** reads **Dock**, **Fly in** or **Mine** with a pulsing rim, since a tap then does that instead of firing.
 
-The left stick steers the ship and moves the mining drill. It comes to your thumb wherever it lands on the stick's side of the screen and returns to its corner when you let go; **Stick fixed in place** keeps it in the corner. **Steer from anywhere** drops the resting stick altogether: a finger on any free part of the screen, on either side, becomes the stick where it lands (looking around by dragging is off in this mode). While the autopilot flies with no enemies near, a **Faster** button speeds up time. The right-hand buttons fire/use a locked object, launch a secondary weapon, boost, select a target, toggle autopilot or auto fire, and switch the rear view. Steering, firing and boosting can be held with separate fingers. A finger on free screen space looks around the ship while it is held (switch it off or change its sensitivity under **Options → Controls → Touch**), and **Adjust control placement…** there lets you drag the stick and every button to a new place. Tapping a control selects it, so you can make it smaller or larger, from 60% to 200%, or reset just that one. Keyboard and gamepad input remain available; mouse steering and mouse-button firing are disabled while touch controls are enabled to avoid interpreting a touch twice.
+The left stick steers the ship and moves the mining drill. It comes to your thumb wherever it lands on the stick's side of the screen and returns to its corner when you let go; **Stick fixed in place** keeps it in the corner. **Steer from anywhere** drops the resting stick altogether: a finger on any free part of the screen, on either side, becomes the stick where it lands (looking around by dragging is off in this mode). A **Faster** button speeds up time (2× at any moment, more while the autopilot flies with no enemies near). The right-hand buttons fire/use a locked object, launch a secondary weapon, boost, select a target, toggle autopilot or auto fire, and switch the rear view. Steering, firing and boosting can be held with separate fingers. A finger on free screen space looks around the ship while it is held (switch it off or change its sensitivity under **Options → Controls → Touch**), and **Adjust control placement…** there lets you drag the stick and every button to a new place. Tapping a control selects it, so you can make it smaller or larger, from 60% to 200%, or reset just that one. Keyboard and gamepad input remain available; mouse steering and mouse-button firing are disabled while touch controls are enabled to avoid interpreting a touch twice.
 
 Gameplay controls hide during locked story scenes and drive cinematics; **Next radio** appears when a radio line is visible. **Actions** opens the same flight equipment menu as M, and **Pause** opens a centered pause menu. Pausing, hiding the controls, losing window focus or leaving flight releases held touch input. In menus, drag anywhere in a list to scroll it; a flick coasts on. A drag that starts on a row does not select it, and a short tap still does. A gamepad disconnecting, or a phone putting the game away, pauses it; resume explicitly from the menu. Switching to another window (to take a screenshot, say) only lets go of held keys; **Options → Controls → Pause when the window loses focus** pauses then too.
-
-### Platforms
-
-The native Linux runtime is exercised by the checks below. `game/export_presets.cfg` also has presets for Windows (x86-64), macOS (universal, unsigned and not notarized), Linux ARM64 and the browser (Web). They export with Godot 4.7's standard templates, for example:
-
-```sh
-godot --headless --path game --export-release "Windows" builds/gof2-remake.exe
-```
-
-These builds are not tested on their native systems. macOS may warn about or block an unsigned app.
-
-The **Web** preset builds a single-threaded browser version. It must be served from a web host, because opening `index.html` from disk does not work. Its first screen uses the browser's own file picker for the JAR. The file is read into the browser's storage and converted there, never uploaded. Without threads, the page stops responding while it converts (under a minute). Only the boot and the JAR screen of the browser build have been checked so far.
-
-The **Android** preset builds an arm64 APK (Android 7 or later, targeting SDK 36) with Godot's prebuilt template, no Gradle project needed. Exporting it needs a JDK and an Android SDK configured in Godot's editor settings, for example `godot --headless --path game --export-debug "Android" builds/gof2-remake.apk` for a debug-signed test build. On the phone, **Choose JAR** opens the system file picker; the chosen file is copied into the app's own storage, converted, and the copy removed. The APK has been built and inspected but not yet run on a device.
 
 ## About the supplied game data
 
 The retail game fetched part of its content — the station list of the later story chapters and the full ship table — from the publisher's online service after the free chapters. That service no longer exists. The engine uses that data only when your JAR itself carries it; otherwise the story stops where the free part ended and the game says so.
 
-## For developers
-
-Requires Godot **4.7**. Open `game/` as the project, or run the checks:
-
-```sh
-godot --headless --path game -s res://tests/import_check.gd -- /path/to/game.jar
-godot --headless --path game -s res://tests/touch_controls_check.gd
-godot --headless --path game -s res://tests/navigation_lock_check.gd
-godot --headless --path game -s res://tests/flight_transition_check.gd
-godot --headless --path game -s res://tests/drive_boundary_check.gd
-godot --headless --path game --fixed-fps 60 -s res://tests/touch_flight_run.gd
-godot --path game --fixed-fps 60 -s res://tests/touch_flight_run.gd -- /tmp/gof2-touch-check
-godot --headless --path game --fixed-fps 60 -s res://tests/smoke.gd -- /tmp/gof2-earned-check
-godot --path game --fixed-fps 60 -s res://tests/smoke.gd -- /tmp/gof2-earned-window
-godot --headless --path game --fixed-fps 60 -s res://tests/earned_travel_run.gd -- /path/to/earned-step6/slot0.json /tmp/gof2-travel-check
-godot --path game --fixed-fps 60 -s res://tests/earned_travel_run.gd -- /path/to/earned-step6/slot0.json /tmp/gof2-travel-window
-godot --path game --fixed-fps 60 -s res://tests/earned_travel_run.gd -- /path/to/earned-step13/slot0.json /tmp/gof2-convoy-window
-godot --path game --fixed-fps 60 -s res://tests/earned_travel_run.gd -- /path/to/earned-step16/slot0.json /tmp/gof2-alioth-gates-window
-godot --headless --path game -s res://tests/alioth_scene_check.gd
-godot --headless --path game -s res://tests/campaign_inventory_check.gd
-godot --headless --path game -s res://tests/passenger_contract_check.gd
-godot --headless --path game --fixed-fps 60 -s res://tests/convoy_transfer_check.gd
-godot --headless --path game -s res://tests/map_routes_check.gd
-godot --headless --path game --fixed-fps 60 -s res://tests/save_recovery_check.gd -- /path/to/earned/slot0.json /tmp/gof2-save-check
-godot --headless --path game --fixed-fps 60 -s res://tests/docking_transaction_check.gd -- /path/to/earned-step13/slot0.json /tmp/gof2-docking-fixture
-```
-
-The input-only check requires no game data. The flight check reads a previously imported JAR cache, drives real screen-touch events through native flight, mining and opening radio, and checks pause behavior and release of discarded worlds/resources. Its test host keeps settings and saves in memory, leaving the player's files untouched. Its free-flight setup is a fixture, not proof of campaign progression. Supplying an output folder writes a JSON report and, for a windowed run, screenshots.
-
-The flight-transition check also needs no game data. It verifies that completing docking, a gate jump or local star travel retires the old physics world before further weapons, collisions, salvage or traffic updates can run. Repeated updates must not create additional transitions or count a gate twice. These are lifecycle fixtures, not earned travel checkpoints.
-
-The drive-boundary check uses installed content and synthetic in-memory states, never player saves. It checks fitted equipment, current versus remote mission restrictions, transit locks, invalid destinations, separate drive/gate accounting, and Void return-address preservation. The earned drive and separate-process reload checks exercise the real hangar and flight interfaces from recorded product checkpoints; their pilot only returns ordinary controls. Synthetic Void checks are not proof of an earned Void round trip.
-
-`earned_drive_branches.gd` separately continues recorded native saves through a Void round trip or a confirmed station-Map drive departure. It dispatches keyboard, pointer and screen-touch events through Godot's input system and uses ordinary pilot controls only for physical docking. Each result is checked again in a separate rendered process. This validates native input-event integration on Linux, not physical touchscreen/gamepad hardware or Android/browser packaging. The Void check returns promptly; it is not an extended Void combat or mining playthrough.
-
-The buyer checks separate memory-only transaction and station-screen boundaries from earned gameplay. `earned_buyer_order.gd` continues a recorded native buyer checkpoint through real lounge, map and shop input events, finite purchases and physical delivery; `earned_buyer_reload.gd` checks a recorded result in a separate process. The flight pickup observer stops at the native world's terminal boundary, before station delivery changes inventory; it still rejects unexplained cargo gains or losses during active flight. These checks require their recorded local input and content, and do not establish support for every freelance mission or original-game content variant.
-
-The wingman checks use the same separation. `wingmen_check.gd` labels its synthetic funds, death, deadline, contest and malformed-save cases as memory-only fixtures, including native expiry dialogue and combat-projectile boundaries. `earned_wingmen_run.gd` instead pays for a retained offer through real UI input, launches, physically docks, makes a fitted-drive trip and saves its surviving crew. `earned_wingmen_reload.gd` checks an exact recorded result in a separate rendered process and reconstructs its paid pilots without resetting their timer. These checks require their recorded local inputs and imported content; no fixture-produced save is an earned continuation.
-
-`wingman_orders_check.gd` adds memory-only targeting, real projectile collisions, EMP/gun selection, independent mission-waypoint copies, same-faction command targets, pause ownership and keyboard focus boundaries. `earned_wingman_orders_run.gd` continues the actual paid-crew save through native pointer and keyboard orders and a physical return to its station. `earned_wingman_orders_reload.gd` checks that exact result in a separate rendered process. Test ledgers record the source hashes used for each run; a later collision-boundary fix is not presented as part of an earlier earned flight. These local diagnostics do not prove every mission, content variant or export platform.
-
-`smoke.gd` runs `earned_opening_run.gd`: it starts a new game, steers and fires native weapons, completes the rescue and both mining flights, verifies both cargo handovers, buys and sells an actual starter-shop item, and exercises both save/load menus at campaign step 6. Its full-hold check includes any cores or salvage, just as the supplied goal does. It never assigns campaign progress, ship positions, cargo or enemy damage. A supplied output directory contains the report, native screenshots for a windowed run, and a new `test-saves-<run>/<content-id>/` directory with the earned autosave and manual `slot0.json`. Without an output directory saves stay in memory. Windowed checks resume focus-loss pauses through the actual Resume button; normal gameplay still requires explicit resume.
-
-`earned_travel_run.gd` copies an earned step-6, step-13, step-14 or step-16 save into a fresh isolated host and selects its installed content by SHA. From step 6 it buys and fits starter equipment through the real shop controls, fights with native projectiles, travels through the Map and station targeting controls, sells earned cargo when available, and completes the first actual courier job. From a one-job step-13 input it completes the second courier, preserves a separate earned step-14 JSON, then plays the convoy and debrief transport to Alioth. An earned two-job step-14 input resumes that last leg directly. From step 16 it plays the Alioth battle and return, preserves `earned-alioth-return.json`, then uses the supplied gate graph and actual Map/flight controls to reach the next arrival objective. The report separates physical gate entries from local star travel and verifies docking autosave and manual reload. It does not assign campaign progress, mission results, positions, damage, cargo or random seeds. The controller avoids firing through friendly formations but can still fail combat or find no eligible route or courier within its bounded search; those failures remain in the report rather than replacing the world with a fixture.
-
-The inventory, convoy-transfer, Alioth-scene and Map-route checks are separate synthetic unit fixtures against installed content. They verify cargo-handover boundaries, debrief acknowledgment before transport and its single autosave, Alioth ally durability and combat AI, the post-Alioth livery transition, and numeric reachability across the whole imported graph. They do not establish earned campaign progression or actual gate-flight completion. Navigation-lock tests are separate targeting fixtures with no campaign or game data. Never pass a fixture-produced save as an earned continuation input.
-
-The save-recovery check accepts an earned post-mining `slot0.json` from either run and copies it into a separate test directory in a fresh process. It checks JSON persistence, invalid-state rejection without changing the live session, preservation of the previous checkpoint on a write failure, and defeat recovery. Malformed files and lethal player damage in this check are explicit failure fixtures, not campaign-completion evidence. The checks do not read or write player save files or change player settings. Opening and local-travel checks do not establish completion of the remaining campaign or platform exports.
-
-The docking-transaction check requires an earned step-13 checkpoint with one completed job. It adds explicitly synthetic freight and damage only to its isolated copy, then verifies that delivery, the next story goal, free servicing and autosave settle together. Its step-14 output is a fixture, not an earned campaign checkpoint.
-
-The engine is split into `game/src/import` (local content conversion), `content` (converted data/resources), `simulation` (session and station rules), `flight` (native world, input and HUD), and `screens`/`presentation` (Godot interface and rendering). `tests/parse_check.gd` accepts script paths after `--` and exits nonzero when a script cannot be instantiated.
-
 ## License
 
 The engine's own source is licensed under the [Apache License 2.0](LICENSE.md). It grants no rights to Galaxy on Fire 2, its JAR or anything converted from it; those belong to their respective rights holders. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## Donations
+
+If you want to support this development or ones similar to it, you can do it here https://ko-fi.com/wwworm
+Please only do it if you have money for it and always be financially responsibe. Nevertheless I am grateful for any support given.

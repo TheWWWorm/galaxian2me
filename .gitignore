@@ -3,3 +3,15 @@
 game/.godot/
 builds/
 *.tmp
+*.log
+*.jar
+*.zip
+*.apk
+*.x86_64
+*.exe
+*.pck
+# The hosted engine pack belongs with public/.
+!public/index.pck
+.wrangler/
+node_modules/
+__pycache__/
