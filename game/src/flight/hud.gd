@@ -239,7 +239,8 @@ func _draw() -> void:
 		_centered(Vector2(size.x / 2.0, centre.y + 64 * k), pilot, 12, FRIEND, true)
 	var hint := action_hint() if bool(app.setting("interface", "hints", true)) else ""
 	if not hint.is_empty():
-		_centered(aim_point(centre) + Vector2(0, 42 * k), hint, 12, Color(UI.TEXT, 0.9), true)
+		# Above the crosshair: the original captions landmarks below and right of it.
+		_centered(aim_point(centre) - Vector2(0, 34 * k), hint, 12, Color(UI.TEXT, 0.9), true)
 	if bool(app.setting("interface", "hints", true)) and not touch_layout and space.target == null:
 		var four: Array = ["steer_up", "steer_left", "steer_down", "steer_right"].map(func(a): return Prefs.key_name(a))
 		var keys_text: String = "/".join(four)
@@ -686,6 +687,25 @@ func _draw_asteroid_lock(size: Vector2) -> void:
 		if frame >= frames - 1: frame = -1
 	if frame >= 0: _draw_region("hud_scanprocess_anim_png24", Rect2(frame * cell, 0, cell, cell), at)
 
+## Radar.java's landmark caption beside the bracket: the station's name
+## with "Station", its Tec Level and the distance, or a gate's name and
+## distance.
+func _landmark_label(b: Body, at: Vector2, dist: float) -> void:
+	var lines: Array = []
+	var x := 50.0 if b.kind == Body.Kind.STATION else 10.0
+	if b.kind == Body.Kind.STATION:
+		lines.append("%s %s" % [b.name, app.library.text(40)])
+		var st: Dictionary = app.catalogue.station(int(app.game.session.station_id)) if b == space.station else {}
+		if not st.is_empty(): lines.append("%s: %d" % [app.library.text(37), int(st.get("tech", 0))])
+	else:
+		lines.append(b.name)
+	lines.append(_metres(dist))
+	for i in lines.size():
+		var spot := at + Vector2(x, 12.0 + i * 20.0) * k
+		# A dark shadow keeps the caption readable over a lit hull.
+		_text(spot + Vector2(1, 1), str(lines[i]), 11, Color(0, 0, 0, 0.85))
+		_text(spot, str(lines[i]), 11, UI.TEXT)
+
 ## The original's quick blink: on for the second half of every 600 ms.
 func _quick_clock_high() -> bool:
 	return Time.get_ticks_msec() % 600 >= 300
@@ -866,7 +886,7 @@ func _draw_markers(size: Vector2) -> void:
 		if b.kind in [Body.Kind.ARRIVAL, Body.Kind.ASTEROID]: continue
 		var is_target: bool = b == t
 		var on_course: bool = b == course and not is_target
-		if b.kind == Body.Kind.STAR and not is_target and not on_course: continue
+		if b.kind == Body.Kind.STAR and not is_target and not on_course and not original_style(): continue
 		var nav: bool = b.kind in [Body.Kind.STATION, Body.Kind.GATE, Body.Kind.WORMHOLE, Body.Kind.MOTHERSHIP]
 		var threat: bool = b.is_ship() and b.hostile and b.combat_active
 		var world: Vector3 = p.pos + space._star_direction(b) * 200000.0 if b.kind == Body.Kind.STAR else b.pos
@@ -887,11 +907,18 @@ func _draw_markers(size: Vector2) -> void:
 				else:
 					var kind := _standing(b)
 					_draw_tex("bracket_%s_far" % ("enemy" if kind == "enemy" else ("friend" if kind == "friend" else "waypoint")), at)
+			elif nav and original_style() and b.kind in [Body.Kind.STATION, Body.Kind.GATE]:
+				_draw_tex("hud_lockon_waypoint", at)
 			elif nav:
 				draw_arc(at, 7 * k, 0, TAU, 16, Color(color, 0.8), 1.5, true)
 			elif on_course:
 				draw_arc(at, 7 * k, 0, TAU, 16, Color(COURSE, 0.9), 1.5, true)
-			if (nav or is_target or on_course) and bool(app.setting("interface", "labels", true)):
+			if original_style() and b.kind in [Body.Kind.STATION, Body.Kind.GATE] and bool(app.setting("interface", "labels", true)):
+				_landmark_label(b, at, dist)
+			elif original_style() and b.kind == Body.Kind.STAR and bool(app.setting("interface", "labels", true)):
+				# Radar.java names each planet in view above and to its right.
+				_text(at + Vector2(20, -20) * k, b.name, 11, UI.TEXT)
+			elif (nav or is_target or on_course) and bool(app.setting("interface", "labels", true)):
 				var label: String = b.name if not b.name.is_empty() else app.library.text(270)
 				# The chosen destination's way is labelled in gold.
 				_text(at + Vector2(24, 5) * k, label + ("  ·  " + _metres(dist) if dist >= 0.0 else ""), 11, Color(COURSE if on_course else color, 0.95))
