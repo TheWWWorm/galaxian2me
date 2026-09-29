@@ -69,8 +69,12 @@ func _show() -> void:
 	key_note.text = preload("res://src/screens/help_panel.gd").key_note(app, text.text)
 	key_note.visible = not key_note.text.is_empty()
 	for c in portrait.get_children(): c.queue_free()
-	var p := Portrait.make(app.library, int(line.get("speaker", -1)), line.get("face", []))
-	if p != null: portrait.add_child(p)
+	# Help windows and notices have nobody speaking: no empty portrait box.
+	var face: Array = line.get("face", [])
+	portrait.visible = not face.is_empty() or int(line.get("speaker", -1)) >= 0
+	if portrait.visible:
+		var p := Portrait.make(app.library, int(line.get("speaker", -1)), face)
+		if p != null: portrait.add_child(p)
 	back_button.disabled = index == 0
 	next_button.text = app.library.text(75) if index < lines.size() - 1 else app.library.text(35)
 	next_button.grab_focus.call_deferred()

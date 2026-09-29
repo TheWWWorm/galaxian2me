@@ -1827,6 +1827,17 @@ func jump_to(station_id: int) -> bool:
 	event.emit("drive", destination.duplicate())
 	return true
 
+## What firing would do to the current target instead of shooting:
+## "dock", "gate", "wormhole" or "mine"; empty when it would just fire.
+func target_action() -> String:
+	if target == null or not target.alive or not locked or target.is_ship() or autopilot or mining != null: return ""
+	match target.kind:
+		Body.Kind.STATION: return "dock"
+		Body.Kind.GATE: return "gate"
+		Body.Kind.WORMHOLE: return "wormhole" if target.visible else ""
+		Body.Kind.ASTEROID: return "mine"
+	return ""
+
 ## Acting on a locked target that is not a ship.
 func _act_on_target() -> void:
 	match target.kind:

@@ -724,12 +724,8 @@ func action_hint() -> String:
 	if t == null or not t.alive or t.is_ship() or space.autopilot or space.mining != null: return ""
 	if not space.locked:
 		return "Hold it in the crosshair to lock on" if t.kind != Body.Kind.STAR else ""
-	var what := ""
-	match t.kind:
-		Body.Kind.STATION: what = "fly in and dock"
-		Body.Kind.GATE: what = "fly into the gate"
-		Body.Kind.WORMHOLE: what = "fly into the wormhole" if t.visible else ""
-		Body.Kind.ASTEROID: what = "mine"
+	var what: String = {"dock": "fly in and dock", "gate": "fly into the gate",
+		"wormhole": "fly into the wormhole", "mine": "mine"}.get(space.target_action(), "")
 	if what.is_empty(): return ""
 	var press := "Fire" if touch_layout else "%s / left click / RT" % Prefs.key_name("fire")
 	return "%s: %s" % [press, what]

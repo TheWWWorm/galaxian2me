@@ -23,6 +23,9 @@ var radio_visible := false
 var warp_label := ""
 ## The radio button's caption when it skips a cinematic's wait instead.
 var radio_label := ""
+## The fire button's caption while it docks, flies in or mines instead of
+## firing; it pulses then. Empty for the ordinary caption.
+var use_label := ""
 var fingers := {}
 var edges := {}
 var stick_id := -1
@@ -183,6 +186,11 @@ func set_fitted(map: Dictionary) -> void:
 
 func _auto_fire_on() -> bool:
 	return app != null and bool(app.setting("controls", "auto_fire", false))
+
+func set_use(label: String) -> void:
+	if use_label == label: return
+	use_label = label
+	queue_redraw()
 
 func set_warp(label: String) -> void:
 	if warp_label == label: return
@@ -379,11 +387,17 @@ func _draw() -> void:
 		var rect: Rect2 = buttons[action]
 		var held: bool = fingers.values().has(action) or (editing and (_drag == action or selected == action))
 		var auto: bool = action == "fire" and not editing and _auto_fire_on()
+		var use: bool = action == "fire" and not editing and not use_label.is_empty()
 		draw_rect(rect, Color(0.05, 0.23, 0.34, 0.9) if held else Color(0.01, 0.04, 0.08, 0.65))
-		draw_rect(rect, UI.TEXT_GOOD if held or auto else UI.BORDER, false, 3.0 if auto else 2.0)
+		var rim := UI.TEXT_GOOD if held or auto else UI.BORDER
+		if use and not held:
+			var pulse := 0.5 + 0.5 * sin(Time.get_ticks_msec() / 1000.0 * TAU)
+			rim = UI.BORDER.lerp(UI.TEXT_GOOD, pulse)
+		draw_rect(rect, rim, false, 3.0 if auto or use else 2.0)
 		var font_size := 14 if rect.size.x >= 90 else 12
 		var caption: String = LABELS.get(action, "")
 		if action == "time_warp": caption = warp_label if not editing else "Faster"
 		if action == "radio" and not radio_label.is_empty() and not editing: caption = radio_label
 		if auto: caption = "AUTO · tap to stop"
+		if use: caption = use_label
 		draw_string(font, rect.position + Vector2(2, rect.size.y / 2.0 + 5), caption, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x - 4, font_size, UI.TEXT)

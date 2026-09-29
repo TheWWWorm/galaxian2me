@@ -10,6 +10,7 @@ const Common := preload("res://src/screens/station/common.gd")
 const PortalView := preload("res://src/presentation/map_portal_view.gd")
 const Navigation := preload("res://src/simulation/navigation.gd")
 const JavaRandom := preload("res://src/simulation/java_random.gd")
+const Assembly := preload("res://src/presentation/assembly.gd")
 ## The original's planet sizes on its system map, by planet picture.
 const PLANET_SIZES := [320, 192, 256, 256, 192, 256, 192, 192, 320, 256, 192, 192, 320, 256, 320, 256, 256, 256, 320, 192]
 
@@ -30,6 +31,8 @@ var system_view := -1
 ## The station picked in the system view, by its place in the system's list.
 var planet := 0
 var _orbits := {}
+## The chart's star sprites by star kind (see _star_sprite).
+var _stars := {}
 
 ## Wheel or pinch zooms about the pointer, a drag pans, and a click or tap
 ## that did not move picks the system under it.
@@ -266,7 +269,10 @@ func _draw_map(c: Control) -> void:
 		for j in cat.system(i).get("links", []):
 			if int(j) < i or not _known(int(j)): continue
 			var b := _to_screen(c, cat.system(int(j)))
-			c.draw_line(a, b, UI.BORDER, 1.5)
+			# The game's own map help: a dotted line marks the systems this
+			# system's jump gate reaches.
+			if i == here or int(j) == here: c.draw_dashed_line(a, b, Color(UI.TEXT, 0.85), 2.0, 3.0, true, true)
+			else: c.draw_line(a, b, UI.BORDER, 1.5)
 	# The last trips, as a fading gold line ending where you are.
 	var trail: Array = (game.session.flags.get("recent_systems", []) as Array).duplicate()
 	if trail.is_empty() or int(trail.back()) != here: trail.append(here)
@@ -292,7 +298,12 @@ func _draw_map(c: Control) -> void:
 			c.draw_texture_rect(glow, Rect2(p - Vector2(14, 14), Vector2(28, 28)), false, Color(1, 1, 1, 0.8))
 		var col := UI.TEXT if _reachable(i) else UI.TEXT_DIM
 		if i == here: col = UI.TEXT_GOOD
-		c.draw_circle(p, 4.0 if i != selected_system else 6.0, col)
+		var star := _star_sprite(int(sys.get("star", 0)))
+		if star != null:
+			var r := 12.0 if i != selected_system else 15.0
+			c.draw_texture_rect(star, Rect2(p - Vector2(r, r), Vector2(r, r) * 2.0), false, Color.WHITE if _reachable(i) else Color(1, 1, 1, 0.55))
+		else:
+			c.draw_circle(p, 4.0 if i != selected_system else 6.0, col)
 		if i == selected_system: c.draw_arc(p, 10.0, 0, TAU, 24, UI.GREEN, 2.0)
 		var has_portal: bool = int(warning.get("system", -1)) == i
 		if has_portal and portal_view != null:
@@ -306,6 +317,54 @@ func _draw_map(c: Control) -> void:
 		if not job.is_empty() and cat.system_of_station(int(job.get("station", -2))) == i:
 			var mark2: Texture2D = app.library.texture("menu_map_sidemission")
 			if mark2: c.draw_texture_rect(mark2, Rect2(p + Vector2(6, -18), mark2.get_size()), false)
+
+## The original's chart star: its map_3d_sun sprite, a diamond of four
+## triangles from the space texture, posed at the frame of the system's star
+## kind and drawn additively. Built once per kind as a picture whose black
+## is see-through, which looks the same over the dark chart.
+func _star_sprite(kind: int) -> Texture2D:
+	if _stars.has(kind): return _stars[kind]
+	var lib = app.library
+	var model: Dictionary = lib.model_data("map_3d_sun")
+	var tex: Texture2D = lib.atlas_texture("space")
+	_stars[kind] = null
+	if model.is_empty() or tex == null: return null
+	var src: Image = tex.get_image()
+	if src.is_compressed(): return null
+	var mask := Assembly.frame_pattern(lib.animation("map_3d_sun"), kind)
+	var verts: Array = model.vertices
+	var n := 32
+	var tris: Array = []
+	for poly: Dictionary in model.polygons:
+		var pat := int(poly.pattern)
+		if pat != 0 and (pat & mask) == 0: continue
+		var pts: Array = []
+		var uvs: Array = []
+		for j in 3:
+			var v := int(poly.indices[j]) * 3
+			pts.append(Vector2(float(verts[v]), -float(verts[v + 1])) / 4096.0 * n + Vector2(n, n) / 2.0)
+			uvs.append(Vector2(float(poly.attributes[j * 5]), float(poly.attributes[j * 5 + 1])))
+		tris.append([pts, uvs])
+	if tris.is_empty(): return null
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	for y in n:
+		for x in n:
+			var q := Vector2(x + 0.5, y + 0.5)
+			for t in tris:
+				var a: Vector2 = t[0][0]; var b: Vector2 = t[0][1]; var c: Vector2 = t[0][2]
+				var d := (b - a).cross(c - a)
+				if absf(d) < 0.001: continue
+				var w1 := (q - a).cross(c - a) / d
+				var w2 := (b - a).cross(q - a) / d
+				var w0 := 1.0 - w1 - w2
+				if w0 < -0.01 or w1 < -0.01 or w2 < -0.01: continue
+				var uv: Vector2 = t[1][0] * w0 + t[1][1] * w1 + t[1][2] * w2
+				var col := src.get_pixel(clampi(int(uv.x), 0, src.get_width() - 1), clampi(int(uv.y), 0, src.get_height() - 1))
+				var lum := maxf(col.r, maxf(col.g, col.b))
+				if lum > 0.0: img.set_pixel(x, y, Color(col.r / lum, col.g / lum, col.b / lum, lum))
+				break
+	_stars[kind] = ImageTexture.create_from_image(img)
+	return _stars[kind]
 
 ## The fewest gate jumps from one system to another through known systems:
 ## the systems along the way, both ends included, or [] when there is none.

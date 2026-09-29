@@ -146,6 +146,24 @@ func stat(key: String) -> int:
 func add_stat(key: String, amount := 1) -> void:
 	stats[key] = stat(key) + amount
 
+## The pilot's level (the original's Status.level, kept as the "rank"
+## stat): 1 for a new pilot. It raises enemy strength, rewards and hired
+## pilots' fees.
+func level() -> int:
+	return int(stats.get("rank", 1))
+
+## Status.checkForLevelUp: experience from kills, half the wingmen ever
+## commanded, a fiftieth of the ore mined, cores mined and twice the
+## freelance missions done. Each time it passes 1.3 times the mark the last
+## level was reached at (15 for a new pilot), the level rises by one.
+func check_level_up() -> void:
+	if not stats.has("rank"): stats["rank"] = 1
+	var xp := stat("kills") + stat("commanded_wingmen") / 2 + stat("ore_mined") / 50 + stat("cores_mined") + 2 * stat("jobs")
+	var mark := int(stats.get("last_xp", 15))
+	if mark * 1.3 < xp:
+		stats["last_xp"] = xp
+		stats["rank"] = stat("rank") + 1
+
 # ------------------------------------------------------------------ markets
 
 ## Shelf of a station when it is still one of the last three visited.

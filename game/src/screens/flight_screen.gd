@@ -238,6 +238,8 @@ func _physics_process(delta: float) -> void:
 	if app.screen != self or is_queued_for_deletion() or defeated: return
 	if touch != null:
 		touch.set_warp("Time ×%d" % space.time_scale if space.time_scale > 1 else ("Faster" if space.time_warp_allowed() else ""))
+		touch.set_use({"dock": "Dock", "gate": "Fly in", "wormhole": "Fly in", "mine": "Mine"}.get(space.target_action(), ""))
+		if not touch.use_label.is_empty(): touch.queue_redraw()
 	if space.portal_arriving() or space.using_jump_drive: return
 	# Main/o announces elapsed contracts once in the current area. The
 	# original level builder removes their roster on the next area entry.

@@ -58,6 +58,8 @@ func new_game() -> void:
 	s.story_step = 0
 	# The first medal is the pilot's service record, held from the start.
 	s.medals = {"0": 1}
+	s.stats["rank"] = 1
+	s.stats["last_xp"] = 15
 	s.ship = {"index": START_SHIP, "faction": START_FACTION, "hull": 0}
 	s.equipment = [[], [], [], []]
 	s.fit_slots()
@@ -422,6 +424,8 @@ func dock(station_id: int) -> void:
 	# A delivery may satisfy the current story's jobs-so-far requirement.
 	# Both reward and campaign advancement belong to the same docking save.
 	campaign.on_dock(station_id)
+	# The original checks for a new level while the station is open.
+	session.check_level_up()
 	new_medals = Medals.award(session, library, found)
 	_service_docked_ship()
 	docked.emit(station_id)

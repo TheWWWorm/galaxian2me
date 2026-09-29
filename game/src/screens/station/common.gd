@@ -5,12 +5,24 @@ extends RefCounted
 const UI := preload("res://src/presentation/ui.gd")
 const Catalogue := preload("res://src/content/catalogue.gd")
 
-## One cell of items.png per item id.
+## One cell of items.png per item id, over the original's frame for the
+## item's kind (item_types.png: primary, secondary, turret, equipment,
+## commodity), as its hangar lists draw them.
 static func item_icon(library, id: int) -> TextureRect:
 	var sheet: Texture2D = library.texture("items")
 	if sheet == null: return TextureRect.new()
 	var cell := int(sheet.get_width() / max(1, library.data.items.size()))
-	return UI.picture(sheet, 2.0, Rect2(id * cell, 0, cell, sheet.get_height()))
+	var icon := UI.picture(sheet, 2.0, Rect2(id * cell, 0, cell, sheet.get_height()))
+	var frames: Texture2D = library.texture("item_types")
+	if frames == null or id < 0 or id >= library.data.items.size(): return icon
+	var kind := int(library.data.items[id].get("attributes", {}).get(str(Catalogue.A_CATEGORY), -1))
+	var fw := int(frames.get_width() / 5)
+	if kind < 0 or kind >= 5: return icon
+	var frame := UI.picture(frames, 2.0, Rect2(kind * fw, 0, fw, frames.get_height()))
+	frame.custom_minimum_size = icon.custom_minimum_size
+	icon.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	frame.add_child(icon)
+	return frame
 
 static func ship_icon(library, index: int) -> TextureRect:
 	var sheet: Texture2D = library.texture("ships")
