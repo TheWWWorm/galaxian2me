@@ -81,6 +81,16 @@ func _ready() -> void:
 			get_tree().create_timer(5.0).timeout.connect(func():
 				if is_inside_tree() and app.screen == self and not defeated: _conversation(lines, Callable(), true))
 		else: _conversation(lines, Callable(), true)
+	elif job_scene and not int(space.story.job.get("kind", -1)) in [0, 8, 11]:
+		# MGame.dialogueEvent with Dialogue type 0: the client's words as the
+		# job's scene begins (the challenge and the junk hunt have their own).
+		var job: Dictionary = space.story.job
+		var start := 201 + randi() % 5
+		match int(job.kind):
+			12: start = 194
+			7: start = 200
+		_conversation([{"speaker": -1, "name": str(job.get("client", "")), "face": job.get("face", []),
+			"text": app.library.text(start)}], Callable(), true)
 	if bool(game.destination.get("drive", false)): _start_programmed_drive.call_deferred()
 
 func _start_programmed_drive() -> void:

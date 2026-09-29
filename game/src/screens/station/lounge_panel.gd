@@ -253,6 +253,14 @@ func _talk(i: int) -> void:
 	if not bool(p.get("talked", false)):
 		p["talked"] = true
 		if has_offer: game.session.add_stat("bar_talks")
+	if game.session.flags.has("discover_system"):
+		# Bought coordinates: after the thanks, SpaceLounge opens the map
+		# on the newly revealed system (StarMap's discovery scene).
+		var ok := UI.button(app.library.text(253), _show_discovery)
+		ok.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		words.add_child(ok)
+		ok.grab_focus.call_deferred()
+		return
 	if not has_offer: return
 	var lib = app.library
 	var bottom := UI.Frame.new("", false)
@@ -291,7 +299,7 @@ func _talk(i: int) -> void:
 			reply.text = lib.text(443 + clampi(int(float(job.get("difficulty", 0)) / 10.0 * 5.0), 0, 4))))
 	elif kind == Lounge.Kind.JOB and not job.is_empty():
 		answers.add_child(UI.button(lib.text(440), func(): reply.text = lib.text(441)))
-	if kind in [Lounge.Kind.SELLER, Lounge.Kind.ITEM_AGENT, Lounge.Kind.BLUEPRINT_AGENT]:
+	if kind in [Lounge.Kind.SELLER, Lounge.Kind.BLUEPRINT_AGENT]:
 		var goods := int(p.get("blueprint", p.get("item", -1)))
 		if goods >= 0:
 			answers.add_child(UI.button(lib.text(415), func():
@@ -300,6 +308,13 @@ func _talk(i: int) -> void:
 				for f in Common.item_facts(lib, cat, goods): lines.append("%s: %s" % [f[0], f[1]])
 				reply.text = "\n".join(lines)))
 	Common.refocus(answers, 0)
+
+func _show_discovery() -> void:
+	var system := int(game.session.flags.get("discover_system", -1))
+	game.session.flags.erase("discover_system")
+	station._open_section(2)
+	var map = station.current_panel
+	if map != null and map.has_method("start_discovery"): map.start_discovery(system)
 
 ## The original's popup after OK: the deal asked once more ("Accept this
 ## mission?", "Buy 8x Microchips for 192$?"), with Yes and No.
@@ -315,7 +330,8 @@ func _confirm(i: int, answers: VBoxContainer) -> void:
 		var err: String = game.accept_job(i)
 		if not err.is_empty(): station.notify(err)
 		station._refresh()
-		_fill())
+		_fill()
+		if err.is_empty() and game.session.flags.has("discover_system"): _talk(i))
 	var no := UI.button(lib.text(39), func(): _talk(i))
 	for b in [yes, no]:
 		b.alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -332,10 +348,12 @@ func _question(p: Dictionary) -> String:
 			var job: Dictionary = p.get("job", {})
 			if job.is_empty(): return lib.text(498)
 			return lib.text(499).replace("#M", lib.text(179 + int(job.kind))).replace("#C", UI.money(int(job.get("reward", 0))))
-		Lounge.Kind.SELLER, Lounge.Kind.ITEM_AGENT:
+		Lounge.Kind.SELLER:
 			return lib.text(502).replace("#Q", str(int(p.get("count", 1)))).replace("#P", cat.item_name(int(p.get("item", -1)))).replace("#C", price)
 		Lounge.Kind.BLUEPRINT_AGENT:
 			return lib.text(503).replace("#P", cat.item_name(int(p.get("blueprint", -1)))).replace("#C", price)
+		Lounge.Kind.COORDINATES_AGENT:
+			return lib.text(504).replace("#S", cat.system_name(int(p.get("system", -1)))).replace("#C", price)
 		Lounge.Kind.WINGMEN:
 			if bool(game.session.flags.get("all_medals", false)): return lib.text(501).replace("#C", price)
 			return lib.text(500).replace("#Q", str(p.get("pilots", []).size())).replace("#C", price)

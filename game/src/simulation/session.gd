@@ -208,6 +208,7 @@ func location_id() -> int:
 
 ## Loads a saved dictionary; returns an error message or "".
 func from_dict(d: Dictionary) -> String:
+	d = _repair_agent_deals(d)
 	var error := _validate_save(d)
 	if not error.is_empty(): return error
 	# Validate the entire snapshot before changing any field. Own the loaded
@@ -238,6 +239,38 @@ func from_dict(d: Dictionary) -> String:
 	flags = d.get("flags", {})
 	fit_slots()
 	return ""
+
+## Earlier builds read agents.bin's secret-system and blueprint fields the
+## wrong way round: a bought blueprint arrived as a cargo item and bought
+## coordinates as a blueprint keyed by the system's number. For each named
+## agent the save marks as dealt with, grant what was paid for and drop the
+## misplaced blueprint entry. The cargo item already received is kept.
+func _repair_agent_deals(d: Dictionary) -> Dictionary:
+	if cat == null or not d.get("flags") is Dictionary: return d
+	var agents = cat.data.get("agents", []) if cat.data is Dictionary else []
+	if not agents is Array or agents.is_empty(): return d
+	var sold := {}
+	for a in agents:
+		var offer: Dictionary = Catalogue.agent_offer(a)
+		if int(offer.blueprint) >= 0: sold[str(int(offer.blueprint))] = true
+	var out := d
+	for a in agents:
+		if not d.flags.has("agent_done_%d" % int(a.get("id", -1))): continue
+		var offer: Dictionary = Catalogue.agent_offer(a)
+		if out == d: out = d.duplicate(true)
+		if not out.get("blueprints") is Dictionary: out["blueprints"] = {}
+		if not out.get("unlocked_systems") is Dictionary: out["unlocked_systems"] = {}
+		var system := int(offer.system)
+		if system >= 0 and not cat.system(system).is_empty():
+			out.unlocked_systems[str(system)] = true
+			var wrong = out.blueprints.get(str(system))
+			var progress = wrong.get("progress", {}) if wrong is Dictionary else null
+			if progress is Dictionary and progress.is_empty() and not sold.has(str(system)):
+				out.blueprints.erase(str(system))
+		var blueprint := int(offer.blueprint)
+		if blueprint >= 0 and not cat.item(blueprint).is_empty() and not out.blueprints.has(str(blueprint)):
+			out.blueprints[str(blueprint)] = {"progress": {}}
+	return out
 
 ## JSON represents numbers as floats. Accept integral finite values, but
 ## never silently truncate fractions, parse strings or coerce booleans.

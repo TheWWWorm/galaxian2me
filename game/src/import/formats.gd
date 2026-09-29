@@ -203,7 +203,7 @@ static func agents(bytes: PackedByteArray) -> Dictionary:
 	var out: Array = []
 	while r.left() > 0 and r.error.is_empty():
 		var a := {"name": r.utf(), "id": r.s32(), "station": r.s32(), "system": r.s32(), "race": r.s32(),
-			"male": r.s32() == 1, "blueprint": r.s32(), "item": r.s32(), "price": r.s32()}
+			"male": r.s32() == 1, "secret_system": r.s32(), "blueprint_item": r.s32(), "price": r.s32()}
 		var n := r.s32()
 		var face: Array = []
 		for _i in maxi(n, 0): face.append(r.s8())

@@ -170,3 +170,12 @@ func travel_distance(a: int, b: int) -> float:
 
 func agent(index: int) -> Dictionary:
 	return data.agents[index] if index >= 0 and index < data.agents.size() else {}
+
+## What a named lounge agent sells: {"system": secret system or -1,
+## "blueprint": blueprint item or -1}. Content caches converted before the
+## field names were corrected store the same two values as "blueprint"
+## (secret system) and "item" (blueprint item), in agents.bin order.
+static func agent_offer(a: Dictionary) -> Dictionary:
+	if a.has("secret_system"):
+		return {"system": int(a.secret_system), "blueprint": int(a.get("blueprint_item", -1))}
+	return {"system": int(a.get("blueprint", -1)), "blueprint": int(a.get("item", -1))}

@@ -9,7 +9,7 @@ extends RefCounted
 const Catalogue := preload("res://src/content/catalogue.gd")
 const Portrait := preload("res://src/presentation/portrait.gd")
 
-enum Kind { JOB, TALK, SELLER, ITEM_AGENT, BLUEPRINT_AGENT, BUYER, WINGMEN, FACTION }
+enum Kind { JOB, TALK, SELLER, BLUEPRINT_AGENT, COORDINATES_AGENT, BUYER, WINGMEN, FACTION }
 
 ## Stations whose lounges never hand out jobs as destinations.
 const BAR_EXCLUDED := [10, 22, 27, 29, 30, 48, 55, 56, 76, 79, 91, 98]
@@ -71,14 +71,16 @@ func generate(station_id: int) -> Array:
 	for a in lib.data.agents:
 		if int(a.station) == station_id and story_open and not s.flags.has("agent_done_%d" % int(a.id)):
 			var person := {"name": a.name, "race": int(a.race), "male": bool(a.male), "face": a.face, "agent": int(a.id)}
-			if int(a.blueprint) >= 0:
+			# Agent: a secret system makes a coordinates seller, then a
+			# blueprint (the later assignment wins, as in its constructor).
+			var offer := Catalogue.agent_offer(a)
+			person.kind = Kind.TALK
+			if int(offer.system) >= 0 and not cat.system(int(offer.system)).is_empty():
+				person.kind = Kind.COORDINATES_AGENT
+				person.system = int(offer.system)
+			if int(offer.blueprint) >= 0 and not cat.item(int(offer.blueprint)).is_empty():
 				person.kind = Kind.BLUEPRINT_AGENT
-				person.blueprint = int(a.blueprint)
-			elif int(a.item) >= 0:
-				person.kind = Kind.ITEM_AGENT
-				person.item = int(a.item)
-			else:
-				person.kind = Kind.TALK
+				person.blueprint = int(offer.blueprint)
 			person.price = int(a.price)
 			person.speech = _agent_speech(person)
 			out.append(person)
@@ -302,12 +304,12 @@ func speech(p: Dictionary) -> String:
 
 func _agent_speech(p: Dictionary) -> String:
 	var text: String = _pick(505, 2) + " " + lib.text(516 + int(p.agent))
-	if int(p.kind) == Kind.BLUEPRINT_AGENT:
+	if int(p.kind) == Kind.COORDINATES_AGENT:
 		text += " " + lib.text(508)
-		text = text.replace("#S", cat.system_name(int(lib.data.agents[int(p.agent)].system)))
-	elif int(p.kind) == Kind.ITEM_AGENT:
+		text = text.replace("#S", cat.system_name(int(p.system)))
+	elif int(p.kind) == Kind.BLUEPRINT_AGENT:
 		text += " " + lib.text(507)
-		text = text.replace("#N", cat.item_name(int(p.item)))
+		text = text.replace("#N", cat.item_name(int(p.blueprint)))
 	return text.replace("#C", _money(int(p.price))) + "\n" + _pick(475, 3)
 
 func _random_station_name() -> String:
@@ -345,10 +347,11 @@ func accept(person: Dictionary) -> String:
 				s.flags["passengers"] = int(job.count)
 			person.erase("job")
 			person.kind = Kind.TALK
-			# "See you outside, Mr. Maxwell."
-			person.speech = lib.text(493)
+			# SpaceLounge's reply to a taken job: thanks and good luck, or for
+			# a challenge only "See you outside ... I uploaded the coordinates".
+			person.speech = lib.text(490) if int(job.kind) == 12 else _pick(484, 3) + " " + _pick(487, 3)
 			return ""
-		Kind.SELLER, Kind.ITEM_AGENT:
+		Kind.SELLER:
 			if s.credits < int(person.price): return lib.text(83).replace("#C", _money(int(person.price) - s.credits))
 			var count := int(person.get("count", 1))
 			if s.cargo_free() < count: return lib.text(159)
@@ -360,13 +363,18 @@ func accept(person: Dictionary) -> String:
 			person.kind = Kind.TALK
 			person.speech = lib.text(492)
 			return ""
-		Kind.BLUEPRINT_AGENT:
+		Kind.BLUEPRINT_AGENT, Kind.COORDINATES_AGENT:
 			if s.credits < int(person.price): return lib.text(83).replace("#C", _money(int(person.price) - s.credits))
 			s.credits -= int(person.price)
-			s.blueprints[str(person.blueprint)] = {"progress": {}}
+			if int(person.kind) == Kind.BLUEPRINT_AGENT:
+				if not s.blueprints.has(str(person.blueprint)): s.blueprints[str(person.blueprint)] = {"progress": {}}
+			else:
+				s.unlocked_systems[str(person.system)] = true
+				# SpaceLounge opens the map on the new system once the thanks are read.
+				s.flags["discover_system"] = int(person.system)
 			s.flags["agent_done_%d" % int(person.agent)] = true
 			person.kind = Kind.TALK
-			person.speech = lib.text(492)
+			person.speech = _pick(484, 3)
 			return ""
 		Kind.WINGMEN:
 			# With every medal, admirers pay to fly along instead.
@@ -396,8 +404,8 @@ func accept(person: Dictionary) -> String:
 func offer_label(person: Dictionary) -> String:
 	match int(person.kind):
 		Kind.JOB, Kind.BUYER: return lib.text(Catalogue.STRING_MISSION_TYPES + int(person.job.kind)) if person.has("job") else ""
-		Kind.SELLER, Kind.ITEM_AGENT: return cat.item_name(int(person.item))
+		Kind.SELLER: return cat.item_name(int(person.item))
 		Kind.BLUEPRINT_AGENT: return lib.text(129)
 		Kind.WINGMEN: return lib.text(146)
-		Kind.FACTION: return lib.text(298)
+		Kind.FACTION: return lib.text(514)
 	return ""

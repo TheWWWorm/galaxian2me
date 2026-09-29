@@ -35,6 +35,12 @@ var planet := 0
 var _orbits := {}
 ## The chart's star sprites by star kind (see _star_sprite).
 var _stars := {}
+## StarMap's discovery scene after bought coordinates: the new system's star
+## grows over DISCOVER_MS on the chart, and its gate links and details appear
+## only once it has; until then only Back works.
+const DISCOVER_MS := 4000.0
+var discover := -1
+var discover_ms := 0.0
 
 ## Wheel or pinch zooms about the pointer, a drag pans, and a click or tap
 ## that did not move picks the system under it.
@@ -160,8 +166,25 @@ func _ready() -> void:
 	if flight_mode != "gate" and _known(game.session.system_index):
 		open_system.call_deferred(game.session.system_index)
 
+## Plays the discovery of a newly revealed system (see DISCOVER_MS).
+func start_discovery(i: int) -> void:
+	if app.catalogue.system(i).is_empty(): return
+	discover = i
+	discover_ms = 0.0
+	if system_view >= 0: close_system()
+	selected_system = i
+	_reveal(canvas, i)
+	_fill_side()
+
+func _discovering() -> bool:
+	return discover >= 0 and discover_ms < DISCOVER_MS
+
 func _process(delta: float) -> void:
 	if portal_view != null and canvas != null: canvas.queue_redraw()
+	if _discovering():
+		discover_ms += delta * 1000.0
+		if canvas != null: canvas.queue_redraw()
+		if not _discovering(): _fill_side()
 	# The system view's camera eases over to the chosen planet.
 	if system_view >= 0 and canvas != null and eye.distance_to(eye_goal) > 1.0:
 		eye = eye.lerp(eye_goal, 1.0 - pow(0.002, delta))
@@ -284,6 +307,7 @@ func _draw_map(c: Control) -> void:
 		var a := _to_screen(c, cat.system(i))
 		for j in cat.system(i).get("links", []):
 			if int(j) < i or not _known(int(j)): continue
+			if _discovering() and (i == discover or int(j) == discover): continue
 			var b := _to_screen(c, cat.system(int(j)))
 			# The game's own map help: a dotted line marks the systems this
 			# system's jump gate reaches.
@@ -310,11 +334,18 @@ func _draw_map(c: Control) -> void:
 		if not _known(i): continue
 		var sys: Dictionary = cat.system(i)
 		var p := _to_screen(c, sys)
-		if glow != null:
+		if glow != null and not (_discovering() and i == discover):
 			c.draw_texture_rect(glow, Rect2(p - Vector2(14, 14), Vector2(28, 28)), false, Color(1, 1, 1, 0.8))
 		var col := UI.TEXT if _reachable(i) else UI.TEXT_DIM
 		if i == here: col = UI.TEXT_GOOD
 		var star := _star_sprite(int(sys.get("star", 0)))
+		var growing: bool = _discovering() and i == discover
+		if growing:
+			# Only the growing star: no glow, ring or name until it has formed.
+			var g := 15.0 * discover_ms / DISCOVER_MS
+			if star != null: c.draw_texture_rect(star, Rect2(p - Vector2(g, g), Vector2(g, g) * 2.0), false)
+			else: c.draw_circle(p, maxf(6.0 * discover_ms / DISCOVER_MS, 0.5), col)
+			continue
 		if star != null:
 			var r := 12.0 if i != selected_system else 15.0
 			c.draw_texture_rect(star, Rect2(p - Vector2(r, r), Vector2(r, r) * 2.0), false, Color.WHITE if _reachable(i) else Color(1, 1, 1, 0.55))
@@ -402,6 +433,7 @@ func route(from: int, to: int) -> Array:
 	return path
 
 func _pick(c: Control, at: Vector2) -> void:
+	if _discovering(): return
 	if system_view >= 0:
 		_pick_planet(c, at)
 		return
@@ -416,6 +448,7 @@ func _pick(c: Control, at: Vector2) -> void:
 
 ## Moves the selection to the nearest known system roughly in `dir`.
 func _step_selection(c: Control, dir: Vector2) -> void:
+	if _discovering(): return
 	if system_view >= 0:
 		_step_planet(c, dir)
 		return
@@ -449,6 +482,8 @@ func _fill_side() -> void:
 	if search != null and not search.text.strip_edges().is_empty():
 		_fill_search(search.text.strip_edges().to_lower())
 		return
+	# The original shows the new system's details once its star has formed.
+	if _discovering(): return
 	var sys: Dictionary = cat.system(selected_system)
 	side.add_child(UI.label(str(sys.name), 18))
 	side.add_child(UI.label("%s: %s" % [app.library.text(219), cat.faction_name(int(sys.faction))], 14, UI.TEXT_DIM))
@@ -566,6 +601,7 @@ func _confirmed(destination: Dictionary) -> void:
 ## Enter, the pad's A or a double click: on the chart this opens the chosen
 ## system; in a system it asks to fly to the chosen station.
 func _accept() -> void:
+	if _discovering(): return
 	if system_view < 0:
 		if _known(selected_system): open_system(selected_system)
 		return
@@ -573,6 +609,7 @@ func _accept() -> void:
 	if planet >= 0 and planet < stations.size(): _choose(int(stations[planet]))
 
 func open_system(i: int) -> void:
+	if _discovering(): return
 	system_view = i
 	selected_system = i
 	var stations: Array = app.catalogue.system(i).get("stations", [])

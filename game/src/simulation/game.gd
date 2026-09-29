@@ -397,6 +397,13 @@ func departure_error() -> String:
 	if session.cargo_free() < 0: return library.text(84)
 	if int(session.job.get("kind", -1)) in [3, 5] and cat.station(int(session.job.get("return_station", -1))).is_empty():
 		return "This older recovery contract has no recorded return station. Abandon it and accept a new offer."
+	# ModStation.leaveStation: at step 6 (fit the gear) and at step 7 while
+	# the ship still has no gun and no extra armour, a hint replaces leaving;
+	# which one depends on whether a primary weapon waits in the hold.
+	if session.story_step == 6 or (session.story_step == 7 and _unarmed()):
+		for id in session.cargo:
+			if cat.category(int(id)) == 0: return library.text(259)
+		return library.text(258)
 	if session.station_id != int(session.story_mission.get("station", -1)): return ""
 	if session.story_step == 20: return library.text(260)
 	if session.story_step == 21:
@@ -404,6 +411,14 @@ func departure_error() -> String:
 			if int(item.id) == 41 and int(item.get("count", 0)) > 0: return ""
 		return library.text(260)
 	return ""
+
+## Ship.getFirePower() == 0 and getCombinedHP() == getBaseHP(): no gun, no
+## shield and no armour plate fitted.
+func _unarmed() -> bool:
+	var stats := session.ship_stats()
+	for e in session.equipment[0]:
+		if e != null: return false
+	return int(stats.shield) == 0 and int(stats.armor_plate) == 0
 
 func depart(target: Dictionary) -> void:
 	destination = target

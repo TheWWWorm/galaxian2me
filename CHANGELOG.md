@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.1
+
+- Space Lounge: the named agents' records (`data/txt/agents.bin`) were read with the secret-system and blueprint fields swapped. The twelve blueprint sellers now unlock the blueprint (previously a cargo item was put in the hold). The four coordinate sellers now reveal their hidden system (previously they created an invalid blueprint entry). The offers name the right blueprint or system, and the purchase question uses texts 503/504.
+- Saves made with 0.1.0 are repaired on load: a blueprint or coordinates already paid for is granted, and the invalid blueprint entry is removed. Such saves could previously fail validation. The cargo item received in error is kept.
+- Map: after coordinates are bought, the map opens on the galaxy chart and the new system's star grows over 4 s. Its gate links and details appear afterwards, and only Back works during the animation (StarMap discovery scene).
+- Station: at campaign step 6, and at step 7 while no gun, shield or armour plate is fitted, Depart shows the original's hint instead of launching (text 258, or 259 when a primary weapon is in the hold).
+- Freelance jobs: the client's line is shown when the job's scene starts in flight (texts 201–205, 194 for a challenge, 200 for the junk job). The lounge reply to an accepted job is texts 484–486 followed by 487–489, or 490 for a challenge (was 493).
+- Space Lounge: the diplomat is labelled "Diplomat" (text 514).
+
 ## 0.1.0
 
 First public build. Windows x86-64, Linux x86-64, macOS (universal, unsigned) and Android (ARM64, x86-64) packages. Every version requires a user-supplied Galaxy on Fire 2 J2ME JAR; acceptance is structural (manifest and expected data files), not by file name or checksum.

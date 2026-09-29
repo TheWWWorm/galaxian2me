@@ -64,7 +64,13 @@ func run() -> void:
 	expected.job = offer
 	expected.markets[0].lounge[0].erase("job")
 	expected.markets[0].lounge[0].kind = 1
-	expected.markets[0].lounge[0].speech = app.library.text(493)
+	# SpaceLounge's reply: one of the thanks, then one of the good-luck lines.
+	var reply := str(accepted.markets[0].lounge[0].get("speech", ""))
+	var replies := []
+	for a in 3:
+		for b in 3: replies.append(app.library.text(484 + a) + " " + app.library.text(487 + b))
+	check(reply in replies, "the buyer answers with the original's thanks and good luck")
+	expected.markets[0].lounge[0].speech = reply
 	check(accepted == normalized(expected), "acceptance changes only the actual job and its consumed lounge offer")
 	game.settle_job(96)
 	check(state(game) == accepted and game.pending_dialogue.is_empty(), "zero goods cannot earn a payment or completion")
