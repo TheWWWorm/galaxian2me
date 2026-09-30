@@ -25,6 +25,11 @@ var planet_direction := Vector3.ZERO
 var planet_color := Color(0, 0, 0)
 var sky: MeshInstance3D
 var sprites: Array = []
+## The skybox's stars redrawn at screen resolution (null when the skybox is
+## not made of star quads); shown instead of the skybox while `crisp` is on.
+var stars: MeshInstance3D
+const GROUP := "gof_backdrops"
+static var crisp := true
 
 func setup(lib, station_id: int, catalogue) -> void:
 	library = lib
@@ -42,6 +47,11 @@ func setup(lib, station_id: int, catalogue) -> void:
 		m.shader = _sky_shader(m.shader)
 		sky.set_surface_override_material(i, m)
 	add_child(sky)
+	stars = _crisp_stars(sky, lib)
+	if stars != null:
+		add_child(stars)
+		add_to_group(GROUP)
+		show_stars(crisp)
 	if station_id == -1:
 		# There is no ordinary star system in Void space: no planet, station
 		# markers or normal-system nebulae. The source uses the green default.
@@ -201,3 +211,123 @@ func background_color(camera: Camera3D) -> Color:
 	# Brighter when looking towards the sun, as the original shades its sky.
 	var facing := maxf(0.0, (-camera.global_transform.basis.z).dot(sun_direction))
 	return tint * (0.4 + 0.6 * facing) + Color(0.004, 0.006, 0.012)
+
+## Crisp stars on or off for every backdrop in the tree.
+static func apply(tree: SceneTree, on: bool) -> void:
+	crisp = on
+	if tree == null: return
+	for b in tree.get_nodes_in_group(GROUP): b.show_stars(on)
+
+func show_stars(on: bool) -> void:
+	if stars == null: return
+	stars.visible = on
+	sky.visible = not on
+
+## The original's skybox is a shell of small quads, each showing the same
+## 13-texel star picture; enlarged on a large screen they turn into soft
+## blobs. Each quad becomes a point drawn at the screen's own resolution: a
+## sharp core and a faint halo in the picture's colour, where the quad was.
+## Returns null (keeping the skybox) for a skybox of any other make-up.
+static func _crisp_stars(sky: MeshInstance3D, lib) -> MeshInstance3D:
+	if sky.mesh == null: return null
+	var atlas: Texture2D = lib.atlas_texture("space")
+	var img: Image = atlas.get_image() if atlas != null else null
+	if img == null: return null
+	if img.is_compressed(): img.decompress()
+	var extent := sky.mesh.get_aabb().get_longest_axis_size()
+	var verts := PackedVector3Array()
+	var corners := PackedVector2Array()
+	var colors := PackedColorArray()
+	var indices := PackedInt32Array()
+	var tints := {}
+	for surface in sky.mesh.get_surface_count():
+		var arrays := sky.mesh.surface_get_arrays(surface)
+		var pos: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var uv: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
+		if pos.size() % 6 != 0 or uv.size() != pos.size(): return null
+		for q in range(0, pos.size(), 6):
+			var box := AABB(pos[q], Vector3.ZERO)
+			var region := Rect2(uv[q], Vector2.ZERO)
+			var centre := Vector3.ZERO
+			for k in 6:
+				box = box.expand(pos[q + k])
+				region = region.expand(uv[q + k])
+				centre += pos[q + k]
+			if box.get_longest_axis_size() > extent * 0.05: return null
+			var key := region
+			if not tints.has(key): tints[key] = _brightest(img, region)
+			var tint: Color = tints[key]
+			var at := sky.transform * (centre / 6.0)
+			var base := verts.size()
+			for c in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
+				verts.append(at); corners.append(c); colors.append(tint)
+			indices.append_array([base, base + 1, base + 2, base, base + 2, base + 3])
+	if verts.is_empty(): return null
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_TEX_UV] = corners
+	arrays[Mesh.ARRAY_COLOR] = colors
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	var node := MeshInstance3D.new()
+	node.name = "crisp_stars"
+	node.mesh = mesh
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var m := ShaderMaterial.new()
+	m.shader = _star_shader()
+	m.render_priority = -100
+	node.material_override = m
+	return node
+
+## A star picture's hue: its texels' mean colour weighted by brightness,
+## raised to full brightness.
+static func _brightest(img: Image, region: Rect2) -> Color:
+	var sum := Vector3.ZERO
+	var r := Rect2i(region.position.floor(), region.size.ceil()).intersection(Rect2i(Vector2i.ZERO, img.get_size()))
+	for y in range(r.position.y, r.end.y):
+		for x in range(r.position.x, r.end.x):
+			var c := img.get_pixel(x, y)
+			var w := c.a * c.get_luminance()
+			sum += Vector3(c.r, c.g, c.b) * w
+	var top := maxf(sum.x, maxf(sum.y, sum.z))
+	if top <= 0.0: return Color(1, 1, 1)
+	sum /= top
+	return Color(sum.x, sum.y, sum.z)
+
+static var _stars_shader: Shader
+static func _star_shader() -> Shader:
+	if _stars_shader == null:
+		_stars_shader = Shader.new()
+		_stars_shader.code = STAR_SHADER
+	return _stars_shader
+
+## Sizes are in pixels of a 1080-line picture and follow the screen's height.
+const STAR_SHADER := """
+shader_type spatial;
+render_mode unshaded, blend_add, depth_draw_never, cull_disabled, fog_disabled, shadows_disabled;
+uniform float core = 0.9;
+uniform float halo = 2.4;
+uniform float halo_strength = 0.3;
+varying vec2 corner;
+varying float pixels;
+
+void vertex() {
+	pixels = VIEWPORT_SIZE.y / 1080.0;
+	float reach = (halo * 3.0 + 1.0) * pixels;
+	vec4 clip = PROJECTION_MATRIX * (MODELVIEW_MATRIX * vec4(VERTEX, 1.0));
+	clip.xy += UV * reach * 2.0 / VIEWPORT_SIZE * clip.w;
+	POSITION = clip;
+	corner = UV * reach;
+}
+
+void fragment() {
+	float d2 = dot(corner, corner);
+	float c = core * pixels, h = halo * pixels;
+	float glow = exp(-d2 / (2.0 * c * c)) + halo_strength * exp(-d2 / (2.0 * h * h));
+	// The core is paler, the halo keeps the picture's colour.
+	ALBEDO = mix(COLOR.rgb * 0.8, vec3(1.0), 0.35 * exp(-d2 / (c * c))) * glow;
+}
+"""
+

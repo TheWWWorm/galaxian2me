@@ -4,7 +4,7 @@ config_version=5
 [application]
 config/name="Galaxy on Fire 2 — J2ME Remake Engine"
 config/description="Native engine for the J2ME Galaxy on Fire 2 using content imported from a supplied JAR."
-config/version="0.1.3"
+config/version="0.1.4"
 run/main_scene="res://scenes/main.tscn"
 config/use_custom_user_dir=true
 config/custom_user_dir_name="gof2-j2me-remake"
@@ -35,6 +35,8 @@ renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
 textures/vram_compression/import_etc2_astc=true
 anti_aliasing/quality/msaa_3d=2
+textures/default_filters/anisotropic_filtering_level=4
+textures/default_filters/anisotropic_filtering_level.mobile=2
 environment/defaults/default_clear_color=Color(0, 0, 0, 1)
 
 [shader_globals]

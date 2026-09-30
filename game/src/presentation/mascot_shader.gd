@@ -15,7 +15,7 @@ uniform sampler2D sphere : source_color, filter_linear, repeat_disable;
 // G roughness, B lamp emission. Relief reads the height smoothly even when
 // the atlas itself is drawn crisp.
 uniform sampler2D surface : FILTER_MODE, repeat_disable;
-uniform sampler2D relief : filter_linear_mipmap, repeat_disable;
+uniform sampler2D relief : filter_linear_mipmap_anisotropic, repeat_disable;
 uniform bool has_surface = false;
 // Enhanced lighting only: bare rock is matte and has no lamps; station
 // plating has less sheen than a ship's paint.
@@ -84,6 +84,9 @@ void fragment() {
 			if (!mineral) METALLIC = hints.a * gof_metal * (station_surface ? 0.3 : 0.6);
 			// A light sheen along a ship's metal edges, as the HD game's rim.
 			if (!mineral && !station_surface) { RIM = hints.a * 0.35 * gof_metal; RIM_TINT = 0.6; }
+			// Station hulls catch the sun along their edges when it stands
+			// behind them; without it a backlit station reads as a flat cut-out.
+			if (station_surface) { RIM = 0.7; RIM_TINT = 0.3; }
 			EMISSION += mineral ? vec3(0.0) : base * hints.b * 2.4;
 			// Fine relief from the texel brightness, in the surface's own frame.
 			float h = texture(relief, st).r * (mineral ? 0.004 : 0.01);

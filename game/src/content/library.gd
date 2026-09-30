@@ -464,7 +464,9 @@ func material(g: Dictionary, skinned := false, station := false) -> ShaderMateri
 	if blend == 4: mode = "blend_add"
 	elif blend == 6: mode = "blend_sub"
 	var cull := "cull_disabled" if g.double else "cull_back"
-	var filter := "filter_linear_mipmap" if smooth else "filter_nearest"
+	# Anisotropic either way: crisp texels up close as the original drew
+	# them, without the shimmer and grazing-angle blur further off.
+	var filter := "filter_linear_mipmap_anisotropic" if smooth else "filter_nearest_mipmap_anisotropic"
 	var skey := mode + cull + filter
 	if not _shaders.has(skey):
 		var sh := Shader.new()

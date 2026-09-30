@@ -10,6 +10,7 @@ const CameraPath := preload("res://src/presentation/camera_path.gd")
 const OptionsPanel := preload("res://src/screens/options_panel.gd")
 const HelpPanel := preload("res://src/screens/help_panel.gd")
 const Benchmark := preload("res://src/presentation/benchmark.gd")
+const TouchControls := preload("res://src/flight/touch_controls.gd")
 
 var app
 var scene := Node3D.new()
@@ -41,20 +42,29 @@ func _ready() -> void:
 	column.add_child(spacer)
 	var frame := UI.Frame.new(app.library.text(67))
 	menu_frame = frame
-	frame.custom_minimum_size = Vector2(320, 0)
+	frame.custom_minimum_size = Vector2(520 if _large_menu() else 320, 0)
 	frame.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	column.add_child(frame)
 	menu = VBoxContainer.new()
-	menu.add_theme_constant_override("separation", 6)
+	menu.add_theme_constant_override("separation", 12 if _large_menu() else 6)
 	frame.add_child(menu)
 	_fill_menu()
 	panel_holder = CenterContainer.new()
 	panel_holder.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	panel_holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(panel_holder)
-	var version := UI.label("%s %s" % [app.library.manifest.get("name", ""), app.library.manifest.get("version", "")], 12, UI.TEXT_DIM)
-	version.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	version.position = Vector2(10, -24)
+	# The engine's own version first, then the supplied game's.
+	var versions := "Remake %s  ·  %s %s" % [ProjectSettings.get_setting("application/config/version", ""),
+		app.library.manifest.get("name", ""), app.library.manifest.get("version", "")]
+	var version := UI.label(versions, 20 if _large_menu() else 13, UI.TEXT_DIM)
+	version.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
+	version.offset_left = 12
+	version.offset_top = -40 if _large_menu() else -28
+	version.offset_bottom = -8
+	version.offset_right = 900
+	version.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	version.add_theme_constant_override("outline_size", 6)
+	version.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
 	add_child(version)
 	app.play_music("gof2_theme")
 	if Benchmark.due(app):
@@ -76,7 +86,16 @@ func _fill_menu() -> void:
 	menu.add_child(UI.button(lib.text(4), _help))
 	if not OS.has_feature("web"):
 		menu.add_child(UI.button(lib.text(5), func(): get_tree().quit()))
+	if _large_menu():
+		for b in menu.get_children():
+			b.add_theme_font_size_override("font_size", 28)
+			b.custom_minimum_size.y = 66
 	(menu.get_child(0) as Control).grab_focus.call_deferred()
+
+## A phone or tablet (or any touch screen) gets a finger-sized main menu: the
+## 1280 x 800 canvas makes the desktop menu a thumbnail on a small screen.
+func _large_menu() -> bool:
+	return TouchControls.wanted(app) or OS.has_feature("web_android") or OS.has_feature("web_ios")
 
 ## The most recently written save slot, or null when there is none.
 func _latest_save():

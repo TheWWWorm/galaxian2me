@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.4
+
+- Title screen: the bottom-left line shows the engine version before the supplied game's name and version. With touch controls active (phones, tablets, touch screens, or the Touch controls option set to On) the main menu uses 28 px text, 66 px rows and a 520 px wide panel.
+- Model textures are sampled with anisotropic filtering (16x, 4x on mobile). With smooth textures off, the atlas is now mipmapped as well (nearest within a level), so distant surfaces no longer shimmer; up close the texels are unchanged.
+- New option: Sharp stars (Graphics, on by default). The skybox's 512 star quads are drawn as points at the screen's resolution (a core and a halo in the star picture's mean colour, sized by the window height) instead of the 13-texel star picture enlarged. Off shows the skybox as before. A skybox that is not made of small quads is always drawn as is.
+- Enhanced lighting: station hulls have a rim term (0.7, tint 0.3), so a station with the sun behind it shows lit edges instead of a flat silhouette.
+
 ## 0.1.3
 
 - Recovered tables (weapon bolt models, gun mount offsets, camera distances, station collision boxes, hangar and lounge layouts, backdrop spots, medal thresholds, title scene keys) were looked up by the class and field names of one build's obfuscation. Builds obfuscated differently (for example 1.0.4) got none of them: shots were invisible, the chase camera used a default distance, and the hangar and lounge were empty. Each table is now found by its type and length, and where needed by the class it shares with another table, the sign of its values or its size relative to its sibling (`Library.TABLES`). A table that cannot be identified uniquely is left missing. Existing content caches work without a new import.

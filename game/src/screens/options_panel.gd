@@ -224,6 +224,8 @@ func _display_page() -> void:
 	_note("The original's view is about %d°." % int(round(Prefs.CLASSIC_FOV)))
 	_toggle("Space dust", "graphics", "dust", true, sync)
 	_toggle("Lens flare", "graphics", "lens_flare", true, sync)
+	_toggle("Sharp stars", "graphics", "sharp_stars", true, func(_on): Prefs.apply_display(app))
+	_note("Draws the starfield's stars as points at the screen's own resolution; off shows the original's star pictures.")
 	_toggle("Smooth ship textures", "display", "smooth_textures", false, func(_on):
 		app.activate(app.library.id))
 	_toggle("Smooth station textures", "display", "smooth_station_textures", bool(app.setting("display", "smooth_textures", false)), func(_on):

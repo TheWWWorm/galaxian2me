@@ -6,6 +6,7 @@ extends RefCounted
 ## apply the ones that act on the engine.
 
 const Lighting := preload("res://src/presentation/lighting.gd")
+const Backdrop := preload("res://src/presentation/backdrop.gd")
 
 const FPS_LIMITS := [0, 30, 60, 120, 144]
 const RENDER_SCALES := [0.5, 0.67, 0.75, 0.85, 1.0]
@@ -109,6 +110,7 @@ static func apply_display(app) -> void:
 	root.msaa_3d = MSAA[msaa]
 	root.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
 	root.scaling_3d_scale = clampf(float(get_value(app, "graphics", "render_scale", 1.0)), 0.5, 1.0)
+	Backdrop.apply(tree, bool(get_value(app, "graphics", "sharp_stars", true)))
 	Lighting.apply(tree, bool(get_value(app, "graphics", "enhanced_lighting", false)), bool(get_value(app, "graphics", "shadows", true)),
 		bool(get_value(app, "graphics", "reflections", true)), clampi(int(get_value(app, "graphics", "light_sources", 2)), 0, 2))
 	if app.get("glare") != null: app.glare.configure(bool(get_value(app, "graphics", "glare", false)), 1.3)
