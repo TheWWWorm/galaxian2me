@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.3
+
+- Recovered tables (weapon bolt models, gun mount offsets, camera distances, station collision boxes, hangar and lounge layouts, backdrop spots, medal thresholds, title scene keys) were looked up by the class and field names of one build's obfuscation. Builds obfuscated differently (for example 1.0.4) got none of them: shots were invisible, the chase camera used a default distance, and the hangar and lounge were empty. Each table is now found by its type and length, and where needed by the class it shares with another table, the sign of its values or its size relative to its sibling (`Library.TABLES`). A table that cannot be identified uniquely is left missing. Existing content caches work without a new import.
+- Opening fight: the throttle (W/S) works. The opening's input filter was written before the throttle existed and dropped it.
+
 ## 0.1.2
 
 - Enhanced lighting uses Godot's lights instead of a lighting approximation in the model shader: a directional light from the system's sun (from the station's own sky layout) with 4-split shadows, ambient light tinted by the system's sky colour, an omni light at each ship's engine flames (brightness follows the throttle and booster), and up to four omni lights at the brightest explosions and bomb blasts. The station hangar, lounge, title scene and ship/station previews have a ceiling or sun key light.

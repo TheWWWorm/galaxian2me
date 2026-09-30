@@ -77,9 +77,69 @@ func format(index: int, values := {}) -> String:
 	for key in values: s = s.replace(key, str(values[key]))
 	return s
 
-## A constant recovered from a static initializer, by "class.field:descriptor".
+## The recovered tables the engine reads, named "class.field:descriptor" as
+## one build's obfuscation happens to call them. Other builds rename the
+## classes and fields, so each is found by its shape instead: its type and
+## length, and where that is not enough, the class it shares with another
+## table, whether it holds negative numbers, or which of two siblings is
+## larger. A table that cannot be told apart is left missing, not guessed.
+const TABLES := {
+	"h#a:[I": {"len": 60},
+	"h#b:[I": {"len": 20, "beside": "h#a:[I"},
+	"co#a:[[I": {"len": 2},
+	"br.a:[[I": {"len": 37},
+	"an.a:[S": {"len": 8},
+	"an.b:[S": {"len": 50},
+	"an.a:[[S": {"len": 3, "beside": "an.a:[S", "smaller": true},
+	"an.b:[[S": {"len": 3, "beside": "an.a:[S", "smaller": false},
+	"df.a:[S": {"len": 37, "negative": false},
+	"df.b:[S": {"len": 37, "negative": true},
+	"cw#b:[I": {"len": 264},
+	"ed#a:[I": {"len": 15},
+	"bp.a:[[[S": {"len": 10},
+}
+var _found := {}
+
+## A constant recovered from a static initializer (see TABLES).
 func constant(key: String, fallback = null):
-	return data.constants.get(key, fallback)
+	if not TABLES.has(key): return data.constants.get(key, fallback)
+	if not _found.has(key): _found[key] = _find_table(key)
+	return fallback if _found[key] == null else data.constants[_found[key]]
+
+static func _owner(key: String) -> String:
+	var field := key.get_slice(":", 0)
+	var cut := field.length()
+	for mark in [".", "#"]:
+		var at := field.find(mark)
+		if at >= 0: cut = mini(cut, at)
+	return field.substr(0, cut)
+
+static func _leaves(v) -> Array:
+	if not (v is Array): return [v]
+	var out: Array = []
+	for x in v: out.append_array(_leaves(x))
+	return out
+
+func _find_table(key: String) -> Variant:
+	var want: Dictionary = TABLES[key]
+	var descriptor := key.get_slice(":", 1)
+	var found: Array = []
+	for k in data.constants:
+		var v = data.constants[k]
+		if str(k).get_slice(":", 1) == descriptor and v is Array and v.size() == int(want.len): found.append(k)
+	if want.has("beside"):
+		var sibling = _found.get(want.beside) if _found.has(want.beside) else _find_table(want.beside)
+		_found[want.beside] = sibling
+		if sibling == null: return null
+		found = found.filter(func(k): return _owner(k) == _owner(sibling))
+	if want.has("negative"):
+		found = found.filter(func(k): return _leaves(data.constants[k]).any(func(x): return float(x) < 0.0) == bool(want.negative))
+	if want.has("smaller") and found.size() == 2:
+		var a := _leaves(data.constants[found[0]]).size()
+		var b := _leaves(data.constants[found[1]]).size()
+		if a == b: return null
+		found = [found[0] if (a < b) == bool(want.smaller) else found[1]]
+	return found[0] if found.size() == 1 else null
 
 # ------------------------------------------------------------------ images
 

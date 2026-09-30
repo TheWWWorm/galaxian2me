@@ -4,7 +4,7 @@ config_version=5
 [application]
 config/name="Galaxy on Fire 2 — J2ME Remake Engine"
 config/description="Native engine for the J2ME Galaxy on Fire 2 using content imported from a supplied JAR."
-config/version="0.1.2"
+config/version="0.1.3"
 run/main_scene="res://scenes/main.tscn"
 config/use_custom_user_dir=true
 config/custom_user_dir_name="gof2-j2me-remake"

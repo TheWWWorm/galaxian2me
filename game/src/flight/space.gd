@@ -892,7 +892,7 @@ func step(delta: float, input: Dictionary) -> void:
 			# The opening's fight is only a fight: no autopilot, map, action
 			# menu, time warp or cloak, as the original's intro allows none.
 			var fight := {}
-			for key in ["yaw", "pitch", "strafe", "fire", "fire_pressed", "secondary", "boost", "auto_fire", "auto_fire_toggled"]:
+			for key in ["yaw", "pitch", "strafe", "throttle", "fire", "fire_pressed", "secondary", "boost", "auto_fire", "auto_fire_toggled"]:
 				if input.has(key): fight[key] = input[key]
 			input = fight
 	if portal_arriving() or starting(): input = {"yaw": 0.0, "pitch": 0.0}
