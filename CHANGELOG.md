@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.5
+
+- Engine text (menus, settings, notices, help and HUD labels the engine adds; 426 texts) is translated into Russian, Ukrainian, German, French, Spanish, Brazilian Portuguese, Italian, Polish, Turkish, Indonesian, Vietnamese, Simplified Chinese, Japanese and Korean. Text is marked with `tr()` and looked up in `game/src/locale/<code>.gd`; `tools/engine_text.py check` compares the catalogs with the code. The game's own text is unchanged and still comes from the JAR; automatic control translation is off, so JAR text is never replaced by a catalog entry.
+- New option: Options → Game → Engine language (`interface/language`). Auto follows the language of the JAR's text, then the system or browser language, then English. The JAR's language is read from its text, not only its `data/lang` folder name: the 1.0.4 build and others keep English text under `ru`. The last game's language is kept in `interface/content_language`, so the import screen and title start in it.
+- The first time a game opens in another language than the system's (both with engine text) and no engine language has been chosen, the title asks in both languages which one to use. The system language is stored as itself, the game's as Auto. The graphics measurement waits for the answer.
+- Chinese, Japanese and Korean engine text uses bundled subsets of Noto Sans CJK (SIL Open Font License 1.1, `licenses/OFL-1.1.txt`) as interface font fallbacks, so it also shows in the browser build.
+- Importer progress and error messages are translated when shown. Sentences built from fragments (save slot names, mission distances, mods status, HUD action hints) are whole templates now.
+
 ## 0.1.4
 
 - Title screen: the bottom-left line shows the engine version before the supplied game's name and version. With touch controls active (phones, tablets, touch screens, or the Touch controls option set to On) the main menu uses 28 px text, 66 px rows and a 520 px wide panel.

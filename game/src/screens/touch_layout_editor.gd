@@ -33,7 +33,7 @@ func _ready() -> void:
 	bar.grow_vertical = Control.GROW_DIRECTION_BOTH
 	bar.add_theme_constant_override("separation", 10)
 	add_child(bar)
-	var hint := UI.label("Drag a control to move it. Tap one to select it and change its size.", 16)
+	var hint := UI.label(tr("Drag a control to move it. Tap one to select it and change its size."), 16)
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	bar.add_child(hint)
 	chosen = UI.label("", 15, UI.TEXT_GOOD)
@@ -43,9 +43,9 @@ func _ready() -> void:
 	sizing.alignment = BoxContainer.ALIGNMENT_CENTER
 	sizing.add_theme_constant_override("separation", 12)
 	bar.add_child(sizing)
-	smaller = UI.button("Smaller", func(): touch.resize_selected(-0.1))
-	larger = UI.button("Larger", func(): touch.resize_selected(0.1))
-	reset_one = UI.button("Reset this one", func(): touch.reset_selected())
+	smaller = UI.button(tr("Smaller"), func(): touch.resize_selected(-0.1))
+	larger = UI.button(tr("Larger"), func(): touch.resize_selected(0.1))
+	reset_one = UI.button(tr("Reset this one"), func(): touch.reset_selected())
 	for b in [smaller, larger, reset_one]:
 		b.custom_minimum_size = Vector2(140, 44)
 		b.alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -54,8 +54,8 @@ func _ready() -> void:
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 12)
 	bar.add_child(row)
-	var reset := UI.button("Reset all", func(): touch.reset_offsets())
-	var done := UI.button("Done", _done)
+	var reset := UI.button(tr("Reset all"), func(): touch.reset_offsets())
+	var done := UI.button(tr("Done"), _done)
 	for b in [reset, done]:
 		b.custom_minimum_size = Vector2(140, 44)
 		b.alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -66,7 +66,7 @@ func _ready() -> void:
 
 func _show_selection() -> void:
 	var key := touch.selected
-	chosen.text = "No control selected" if key.is_empty() else "%s · %d%%" % [touch.control_name(key), int(round(touch.selected_size() * 100.0))]
+	chosen.text = tr("No control selected") if key.is_empty() else "%s · %d%%" % [touch.control_name(key), int(round(touch.selected_size() * 100.0))]
 	smaller.disabled = key.is_empty() or touch.selected_size() <= Touch.MIN_SIZE + 0.001
 	larger.disabled = key.is_empty() or touch.selected_size() >= Touch.MAX_SIZE - 0.001
 	reset_one.disabled = key.is_empty()

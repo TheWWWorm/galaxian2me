@@ -136,6 +136,10 @@ The ship dealer shows the selected hull, or your own, turning in a small showroo
 
 **Options → Game → Credits** rolls the game's own credits from your JAR, followed by this engine's notices.
 
+### Language
+
+The story, ship and item names and the game's own menus always come from your JAR, in its language; if the JAR carries several, **Options → Game → Language** picks one. The engine's own menus, settings and messages follow the game's language when the engine has it, and otherwise the system or browser language. The first time a game opens in another language than the system's, the title asks which of the two the engine should use. **Options → Game → Engine language** picks one by hand; **Auto** follows the game. The engine text is available in English, Russian, Ukrainian, German, French, Spanish, Brazilian Portuguese, Italian, Polish, Turkish, Indonesian, Vietnamese, Simplified Chinese, Japanese and Korean.
+
 ## Replacing art, music and models
 
 You can replace converted art and music with your own files without touching the conversion. Create a `mods` folder in the engine's user data folder (or next to the executable) with any of:

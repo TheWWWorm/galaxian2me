@@ -70,11 +70,11 @@ func _ready() -> void:
 		[291, str(int(st.max_hull) + int(st.shield))],
 		[33, str(s.stat("jobs"))],
 		[71, str(s.stat("kills"))],
-		[282, "%d t" % s.stat("cargo_salvaged")],
+		[282, tr("%d t") % s.stat("cargo_salvaged")],
 		[280, str(s.visited_stations.size())],
 		[287, str(s.stat("jumpgates"))],
 		[281, str(s.stat("goods_produced"))],
-		[283, "%d t" % s.stat("ore_mined")],
+		[283, tr("%d t") % s.stat("ore_mined")],
 		[284, str(s.stat("cores_mined"))],
 		[289, str(s.stat("passengers"))],
 	]

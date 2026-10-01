@@ -30,7 +30,7 @@ func _ready() -> void:
 	if not m.is_empty() and int(m.get("station", -1)) >= 0:
 		sbox.add_child(_destination(int(m.station)))
 	if not game.campaign.step_supported(game.session.story_step + 1) and not m.is_empty():
-		sbox.add_child(UI.paragraph("The next part of the story needs data this build of the game does not contain.", 14, UI.TEXT_WARN))
+		sbox.add_child(UI.paragraph(tr("The next part of the story needs data this build of the game does not contain."), 14, UI.TEXT_WARN))
 	var free := UI.Frame.new(lib.text(279))
 	free.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	free.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
@@ -108,9 +108,10 @@ func _destination(station_id: int) -> Control:
 	var where: String = cat.system_name(system) if system >= 0 else ""
 	var jumps := jumps_to(system)
 	where = "· " + where
-	if station_id == game.session.station_id: where += "  ·  you are here"
-	elif system == game.session.system_index: where += "  ·  in this system"
-	elif jumps > 0: where += "  ·  %d jump%s away" % [jumps, "" if jumps == 1 else "s"]
+	if station_id == game.session.station_id: where += tr("  ·  you are here")
+	elif system == game.session.system_index: where += tr("  ·  in this system")
+	elif jumps == 1: where += tr("  ·  1 jump away")
+	elif jumps > 1: where += tr("  ·  %d jumps away") % jumps
 	var place := UI.label(where, 14, UI.TEXT_DIM)
 	place.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	place.clip_text = true

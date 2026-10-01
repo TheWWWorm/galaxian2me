@@ -196,7 +196,7 @@ func _fill() -> void:
 		b.add_child(tag)
 		list.add_child(b)
 	if people.is_empty():
-		var none := UI.label("Nobody is here right now.", 18, UI.TEXT_DIM)
+		var none := UI.label(tr("Nobody is here right now."), 18, UI.TEXT_DIM)
 		none.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
 		list.add_child(none)
 	if selected >= 0: _talk(selected)

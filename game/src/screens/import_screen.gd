@@ -33,17 +33,17 @@ func _ready() -> void:
 	var center := CenterContainer.new()
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(center)
-	var frame := UI.Frame.new("Galaxy on Fire 2 — J2ME remake engine")
+	var frame := UI.Frame.new(tr("Galaxy on Fire 2 — J2ME remake engine"))
 	frame.custom_minimum_size = Vector2(620, 0)
 	center.add_child(frame)
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 12)
 	frame.add_child(box)
-	var how := "Choose the game's JAR file." if OS.has_feature("web") else "Choose the game's JAR file, or drop it onto this window."
-	box.add_child(UI.paragraph("This engine plays the mobile (J2ME) Galaxy on Fire 2 using the game data from your own copy. %s It is converted on this device; nothing is uploaded, and no game content comes with the engine." % how))
-	box.add_child(UI.paragraph("You need the Sony Ericsson version of the game (Mascot Capsule 3D); versions for other phones cannot be played.", 14, UI.TEXT_WARN))
-	box.add_child(UI.paragraph("The conversion takes under a minute and only happens once.", 14, UI.TEXT_DIM))
-	choose = UI.button("Choose JAR file…", _choose)
+	var how := tr("Choose the game's JAR file.") if OS.has_feature("web") else tr("Choose the game's JAR file, or drop it onto this window.")
+	box.add_child(UI.paragraph(tr("This engine plays the mobile (J2ME) Galaxy on Fire 2 using the game data from your own copy. %s It is converted on this device; nothing is uploaded, and no game content comes with the engine.") % how))
+	box.add_child(UI.paragraph(tr("You need the Sony Ericsson version of the game (Mascot Capsule 3D); versions for other phones cannot be played."), 14, UI.TEXT_WARN))
+	box.add_child(UI.paragraph(tr("The conversion takes under a minute and only happens once."), 14, UI.TEXT_DIM))
+	choose = UI.button(tr("Choose JAR file…"), _choose)
 	choose.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(choose)
 	bar = ProgressBar.new()
@@ -76,7 +76,7 @@ window.gof2Files = {
 	dialog.access = FileDialog.ACCESS_FILESYSTEM
 	# Android's picker filters by media type, which a .jar rarely carries.
 	if not OS.has_feature("android"):
-		dialog.filters = PackedStringArray(["*.jar ; Java MIDlet archives", "* ; All files"])
+		dialog.filters = PackedStringArray([tr("*.jar ; Java MIDlet archives"), tr("* ; All files")])
 	dialog.use_native_dialog = true
 	dialog.file_selected.connect(import_file)
 	add_child(dialog)
@@ -92,22 +92,22 @@ func _web_received(args: Array) -> void:
 	if args.size() < 2: return
 	match str(args[0]):
 		"progress":
-			status.text = str(args[1])
+			status.text = importer_message(str(args[1]))
 		"complete":
 			var file := FileAccess.open(WEB_JAR, FileAccess.WRITE)
 			if file == null:
-				_show_error("Browser storage is unavailable.")
+				_show_error(tr("Browser storage is unavailable."))
 				return
 			file.store_buffer(JavaScriptBridge.js_buffer_to_packed_byte_array(args[1]))
 			var failed := file.get_error() != OK
 			file.close()
 			if failed:
 				DirAccess.remove_absolute(WEB_JAR)
-				_show_error("Browser storage is full. Free some space and try again.")
+				_show_error(tr("Browser storage is full. Free some space and try again."))
 				return
 			import_file(WEB_JAR)
 		_:
-			_show_error(str(args[1]))
+			_show_error(importer_message(str(args[1])))
 
 func _show_error(text: String) -> void:
 	status.text = text
@@ -117,7 +117,7 @@ func import_file(path: String) -> void:
 	if thread != null: return
 	choose.disabled = true
 	bar.visible = true
-	status.text = "Starting…"
+	status.text = tr("Starting…")
 	status.add_theme_color_override("font_color", UI.TEXT_DIM)
 	importer = Importer.new()
 	if OS.has_feature("android") and path != WEB_JAR:
@@ -128,7 +128,7 @@ func import_file(path: String) -> void:
 		if bytes.is_empty() or copy == null:
 			choose.disabled = false
 			bar.visible = false
-			_show_error("That file could not be read. Choose the game's .jar file.")
+			_show_error(tr("That file could not be read. Choose the game's .jar file."))
 			return
 		copy.store_buffer(bytes)
 		copy.close()
@@ -150,7 +150,7 @@ func _process(_delta: float) -> void:
 	if thread == null and not running: return
 	var p := importer.progress()
 	bar.value = p.ratio * 100.0
-	status.text = p.message
+	status.text = importer_message(p.message)
 	if running or thread.is_alive(): return
 	var result: Dictionary = thread.wait_to_finish()
 	thread = null
@@ -161,13 +161,46 @@ func _finish(result: Dictionary) -> void:
 	choose.disabled = false
 	bar.visible = false
 	if result.has("error"):
-		status.text = result.error
+		status.text = importer_message(result.error)
 		status.add_theme_color_override("font_color", UI.TEXT_WARN)
 		return
 	if not app.activate(result.id):
-		status.text = "The converted content could not be opened."
+		status.text = tr("The converted content could not be opened.")
 		return
 	app.show_title()
+
+## The importer's progress and failure text, which it writes in English, in
+## the engine language. Text it does not know stays as it came.
+func importer_message(message: String) -> String:
+	var patterns := [
+		["^Rendering music (\\d+) of (\\d+)…$", tr("Rendering music %d of %d…")],
+		["^This JAR is not a compatible Galaxy on Fire 2 build \\(missing (.+)\\)\\.$", tr("This JAR is not a compatible Galaxy on Fire 2 build (missing %s).")],
+		["^Conversion did not complete \\((.+) missing\\)\\.$", tr("Conversion did not complete (%s missing).")],
+		["^Unsupported data layout: (.+)$", tr("Unsupported data layout: %s")],
+		["^Oversized resource (.+)$", tr("Oversized resource %s")],
+		["^Unsupported texture encoding in (.+)$", tr("Unsupported texture encoding in %s")],
+	]
+	for pattern in patterns:
+		var found := RegEx.create_from_string(pattern[0]).search(message)
+		if found == null: continue
+		var values: Array = []
+		for i in range(1, found.get_group_count() + 1):
+			var value := found.get_string(i)
+			values.append(int(value) if value.is_valid_int() and pattern[1].contains("%d") else tr(value))
+		return pattern[1] % values
+	return tr(message)
+
+## Listed so that the fixed importer text is translated; importer_message()
+## looks each one up.
+func importer_messages() -> Array:
+	return [tr("Checking the archive…"), tr("The file could not be read."), tr("The file is larger than any Galaxy on Fire 2 JAR."),
+		tr("This is not a readable JAR archive."), tr("MIDlet manifest"),
+		tr("This build stores its models in a format the engine does not read (no Mascot Capsule models under data/v3d). Use the Sony Ericsson version of the game."),
+		tr("Import cancelled."), tr("Could not store the converted content."), tr("Done"), tr("Reading game data…"),
+		tr("Unsupported build: no string table under data/lang."), tr("Reading constant data…"),
+		tr("Unsupported build: the model registry could not be read."), tr("Converting resources…"),
+		tr("Unsupported build: too few readable models."), tr("Finishing…"), tr("Could not write converted data."),
+		tr("Reading the campaign…"), tr("Reading your local file…"), tr("The selected file is too large to be the game JAR.")]
 
 func _exit_tree() -> void:
 	if running: importer.cancelled = true

@@ -64,7 +64,7 @@ func _fill() -> void:
 		hold_list.add_child(Common.row(Common.item_icon(app.library, id), "%s  ×%d" % [cat.item_name(id), game.session.cargo_count(id)], UI.money(game.price_here(id)), _select.bind(id, 1), id == selected and selected_side == 1))
 	var used: int = game.session.cargo_used()
 	var cap: int = int(game.session.ship_stats().cargo_capacity)
-	hold_list.add_child(UI.label("%s: %d / %d t" % [app.library.text(61), used, cap], 14, UI.TEXT_DIM))
+	hold_list.add_child(UI.label(tr("%s: %d / %d t") % [app.library.text(61), used, cap], 14, UI.TEXT_DIM))
 	_detail()
 	Common.refocus(self, keep)
 
@@ -80,7 +80,7 @@ func _detail() -> void:
 	Common.refocus(detail, keep)
 	if selected < 0:
 		# The original's help here names phone keys; this says what to do here.
-		detail.add_child(UI.paragraph("Pick an item on the station's shelf to buy it, or one in your cargo hold to sell it.\n\nEquipment you buy goes into the hold; fit it to your ship on the Ship tab.", 14, UI.TEXT_DIM))
+		detail.add_child(UI.paragraph(tr("Pick an item on the station's shelf to buy it, or one in your cargo hold to sell it.\n\nEquipment you buy goes into the hold; fit it to your ship on the Ship tab."), 14, UI.TEXT_DIM))
 		return
 	var cat = app.catalogue
 	var id := selected
@@ -99,7 +99,7 @@ func _detail() -> void:
 	# Set against what is fitted in its place, the way the dealer sets hulls.
 	var fitted := Common.fitted_counterpart(game.session, cat, id) if selected_side == 0 else -1
 	if fitted >= 0:
-		detail.add_child(UI.label("Compared with your %s" % cat.item_name(fitted), 13, UI.TEXT_DIM))
+		detail.add_child(UI.label(tr("Compared with your %s") % cat.item_name(fitted), 13, UI.TEXT_DIM))
 	for r in Common.fact_rows(app.library, cat, id, fitted): detail.add_child(r)
 	var price: int = game.price_here(id)
 	detail.add_child(Common.price_line(app.library.text(36), UI.money(price)))
@@ -118,7 +118,7 @@ func _detail() -> void:
 	detail.add_child(row)
 	for b in [UI.button("−", func(): amount = maxi(1, amount - 1); _detail()), null,
 			UI.button("+", func(): amount = mini(available, amount + 1); _detail()),
-			UI.button("Max", func(): amount = available; _detail())]:
+			UI.button(tr("Max"), func(): amount = available; _detail())]:
 		if b == null:
 			var n := UI.label("%d" % amount, 18)
 			n.custom_minimum_size.x = 44
@@ -128,7 +128,7 @@ func _detail() -> void:
 		b.alignment = HORIZONTAL_ALIGNMENT_CENTER
 		b.custom_minimum_size = Vector2(44, 40)
 		row.add_child(b)
-	var action := Common.action_button(("Buy" if selected_side == 0 else app.library.text(137)) + "  (" + UI.money(price * amount) + ")",
+	var action := Common.action_button((tr("Buy") if selected_side == 0 else app.library.text(137)) + "  (" + UI.money(price * amount) + ")",
 		"cart" if selected_side == 0 else "sell", _trade)
 	action.disabled = selected_side == 1 and not game.can_sell_cargo(id)
 	detail.add_child(action)

@@ -28,9 +28,9 @@ func _main() -> void:
 	box.add_child(UI.button(lib.text(2), _save))
 	box.add_child(UI.button(lib.text(1), _load))
 	if not OS.has_feature("web"):
-		box.add_child(UI.button("Export save…", func(): app.pick_save_file(true, func(path):
+		box.add_child(UI.button(tr("Export save…"), func(): app.pick_save_file(true, func(path):
 			var err: String = app.export_save(path)
-			station.notify("Saved to %s" % path.get_file() if err.is_empty() else err))))
+			station.notify(tr("Saved to %s") % path.get_file() if err.is_empty() else err))))
 	box.add_child(UI.button(lib.text(3), _options))
 	box.add_child(UI.button(lib.text(4), func():
 		frame.visible = false
@@ -49,7 +49,7 @@ func _refocus(text: String) -> void:
 
 func _slot_label(slot: int) -> String:
 	var d: Dictionary = app.slot_summary(slot)
-	var prefix := "Autosave — " if slot == app.AUTOSAVE_SLOT else ""
+	var prefix := tr("Autosave — ") if slot == app.AUTOSAVE_SLOT else ""
 	if d.is_empty(): return prefix + app.library.text(26)
 	return prefix + "%s — %s  (%s)" % [app.catalogue.station_name(int(d.get("station", 0))), UI.money(int(d.get("credits", 0))), str(d.get("saved_at", "")).replace("T", " ")]
 
@@ -78,7 +78,7 @@ func _load() -> void:
 		# 29: "Do you want to load the new game and discard the current one?"
 		box.add_child(UI.button(label, func(): UI.ask(self, app.library.text(29), restore, _refocus.bind(label)), used))
 	if not OS.has_feature("web"):
-		box.add_child(UI.button("Import save…", func(): app.pick_save_file(false, func(path):
+		box.add_child(UI.button(tr("Import save…"), func(): app.pick_save_file(false, func(path):
 			var err: String = app.import_save(path)
 			if not err.is_empty(): station.notify(err))))
 	box.add_child(UI.button(app.library.text(65), _main))

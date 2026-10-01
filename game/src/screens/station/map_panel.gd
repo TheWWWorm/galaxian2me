@@ -147,7 +147,7 @@ func _ready() -> void:
 	showroom.custom_minimum_size = Vector2(280, 130)
 	column.add_child(showroom)
 	search = LineEdit.new()
-	search.placeholder_text = "Search stations…"
+	search.placeholder_text = tr("Search stations…")
 	search.clear_button_enabled = true
 	search.text_changed.connect(func(_t): _fill_side())
 	column.add_child(search)
@@ -489,7 +489,7 @@ func _fill_side() -> void:
 	side.add_child(UI.label("%s: %s" % [app.library.text(219), cat.faction_name(int(sys.faction))], 14, UI.TEXT_DIM))
 	side.add_child(UI.label("%s: %s" % [app.library.text(220), app.library.text(225 + int(sys.safety))], 14, UI.TEXT_DIM))
 	if selected_system != game.session.system_index:
-		side.add_child(UI.label("%.0f km" % cat.travel_distance(game.session.system_index, selected_system), 14, UI.TEXT_DIM))
+		side.add_child(UI.label(tr("%.0f km") % cat.travel_distance(game.session.system_index, selected_system), 14, UI.TEXT_DIM))
 	# The original's softkeys: Zoom into the chosen system, Back out of it.
 	# In a system its planets are chosen on the map itself, not listed here.
 	if system_view < 0:
@@ -530,10 +530,10 @@ func _fill_side() -> void:
 			side.add_child(head)
 			side.add_child(UI.label("%s: %d" % [app.library.text(37), int(st.get("tech", 0))], 14, UI.TEXT_DIM))
 			if sid == game.session.station_id:
-				side.add_child(UI.label("◄ You are here", 14, UI.TEXT_DIM))
+				side.add_child(UI.label(tr("◄ You are here"), 14, UI.TEXT_DIM))
 			else:
-				var verb: String = "Fly to" if flight != null else app.library.text(239) + " →"
-				var go := UI.button("%s %s" % [verb, st.get("name", "?")], _choose.bind(sid), reachable)
+				var label: String = tr("Fly to %s") % st.get("name", "?") if flight != null else "%s → %s" % [app.library.text(239), st.get("name", "?")]
+				var go := UI.button(label, _choose.bind(sid), reachable)
 				go.set_meta("station", sid)
 				for key in ["story_station", "wormhole_station"]:
 					if title.has_meta(key): go.set_meta(key, sid)
@@ -541,7 +541,7 @@ func _fill_side() -> void:
 			_show_station(sid)
 	side.add_child(HSeparator.new())
 	if flight != null:
-		side.add_child(UI.button("Back to flight", flight.close_navigation))
+		side.add_child(UI.button(tr("Back to flight"), flight.close_navigation))
 	else:
 		side.add_child(UI.button(app.library.text(239), func(): _confirm_depart({})))
 
@@ -561,7 +561,7 @@ func _fill_search(query: String) -> void:
 				search.text = ""
 				canvas.queue_redraw()
 				_fill_side()))
-	if found == 0: side.add_child(UI.paragraph("No known station matches.", 14, UI.TEXT_DIM))
+	if found == 0: side.add_child(UI.paragraph(tr("No known station matches."), 14, UI.TEXT_DIM))
 
 ## Puts a station in the card's showroom.
 func _show_station(station_id: int) -> void:

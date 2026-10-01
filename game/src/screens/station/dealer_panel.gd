@@ -74,7 +74,7 @@ func _detail() -> void:
 	detail.add_child(UI.label("%s %s" % [app.catalogue.ship_name(int(game.session.ship.index)), UI.money(game.ship_value())], 14, UI.TEXT_DIM))
 	# The original asks before the exchange: "Do you really want to buy this ship?"
 	var offer := selected
-	var buy := Common.action_button("Buy this ship", "cart", func():
+	var buy := Common.action_button(tr("Buy this ship"), "cart", func():
 		UI.ask(self, app.library.text(144), func():
 			var error: String = game.buy_ship(offer)
 			if error.is_empty():
@@ -95,7 +95,7 @@ func _title(text: String) -> void:
 ## also shows how far the offer is ahead of it or behind.
 func _facts(s: Dictionary, against := {}) -> void:
 	# Imported numbers arrive as floats; the counts are whole.
-	for f in [[60, "armor", "%d"], [61, "cargo", "%d t"], [59, "handling", "%.2f"],
+	for f in [[60, "armor", "%d"], [61, "cargo", tr("%d t")], [59, "handling", "%.2f"],
 			[123, "primary", "%d"], [124, "secondary", "%d"], [125, "turret", "%d"], [127, "equipment", "%d"]]:
 		var value := _figure(s, f[1])
 		var delta := ""

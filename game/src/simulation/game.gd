@@ -185,7 +185,7 @@ func contribute_blueprint(order: Dictionary) -> String:
 		if not session._whole(order.get(key), 1 if key == "count" else 0): return library.text(257)
 	var current := blueprint_offer(int(order.product), int(order.ingredient), int(order.count))
 	if not str(current.error).is_empty(): return str(current.error)
-	if current != order: return "The production order changed. Review it before confirming."
+	if current != order: return tr("The production order changed. Review it before confirming.")
 	workshop.contribute(current)
 	changed.emit()
 	return ""
@@ -396,7 +396,7 @@ func departure_error() -> String:
 	# hold. Keep every item, but require fitting/trading before any departure.
 	if session.cargo_free() < 0: return library.text(84)
 	if int(session.job.get("kind", -1)) in [3, 5] and cat.station(int(session.job.get("return_station", -1))).is_empty():
-		return "This older recovery contract has no recorded return station. Abandon it and accept a new offer."
+		return tr("This older recovery contract has no recorded return station. Abandon it and accept a new offer.")
 	# ModStation.leaveStation: at step 6 (fit the gear) and at step 7 while
 	# the ship still has no gun and no extra armour, a hint replaces leaving;
 	# which one depends on whether a primary weapon waits in the hold.

@@ -99,15 +99,15 @@ func time_warp_limit() -> int:
 
 ## Why time may not run at `scale` times now, or "" when it may.
 func time_warp_refusal(scale := 4) -> String:
-	if not player.alive: return "Time speed-up is unavailable now"
+	if not player.alive: return tr("Time speed-up is unavailable now")
 	if scale <= 2: return ""
-	if docking >= 0 or jumping >= 0 or using_jump_drive or travelling >= 0: return "Faster than ×2 is unavailable during this action"
-	if mining_target != null: return "Faster than ×2 is unavailable while mining"
-	if portal_arriving() or starting() or in_opening(): return "Faster than ×2 is unavailable here"
-	if story != null and (story.controls_locked or story.hud_hidden): return "Faster than ×2 is unavailable here"
-	if not autopilot: return "Faster than ×2 needs the autopilot"
+	if docking >= 0 or jumping >= 0 or using_jump_drive or travelling >= 0: return tr("Faster than ×2 is unavailable during this action")
+	if mining_target != null: return tr("Faster than ×2 is unavailable while mining")
+	if portal_arriving() or starting() or in_opening(): return tr("Faster than ×2 is unavailable here")
+	if story != null and (story.controls_locked or story.hud_hidden): return tr("Faster than ×2 is unavailable here")
+	if not autopilot: return tr("Faster than ×2 needs the autopilot")
 	for h in hostiles():
-		if h.pos.distance_to(player.pos) < WARP_CLEARANCE: return "Faster than ×2 is off while enemies are near"
+		if h.pos.distance_to(player.pos) < WARP_CLEARANCE: return tr("Faster than ×2 is off while enemies are near")
 	return ""
 var docking := -1
 var jumping := -1
@@ -1937,9 +1937,9 @@ func navigation_locked() -> bool:
 		or (story != null and story.controls_locked))
 
 func drive_error() -> String:
-	if navigation_locked(): return "The jump drive is unavailable during this action."
-	if not game.session.has_equipped_type(Catalogue.Type.JUMP_DRIVE): return "Fit the jump drive in the hangar first."
-	if not Navigation.drive_allowed(game.session): return "The jump drive cannot be used during this mission."
+	if navigation_locked(): return tr("The jump drive is unavailable during this action.")
+	if not game.session.has_equipped_type(Catalogue.Type.JUMP_DRIVE): return tr("Fit the jump drive in the hangar first.")
+	if not Navigation.drive_allowed(game.session): return tr("The jump drive cannot be used during this mission.")
 	return ""
 
 ## Called only after the player's selection/confirmation. No fuel or credit

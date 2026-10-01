@@ -11,6 +11,7 @@ const UI := preload("res://src/presentation/ui.gd")
 const Prefs := preload("res://src/presentation/preferences.gd")
 const Session := preload("res://src/simulation/session.gd")
 const Game := preload("res://src/simulation/game.gd")
+const EngineLanguage := preload("res://src/presentation/engine_language.gd")
 
 const ImportScreen := preload("res://src/screens/import_screen.gd")
 const TitleScreen := preload("res://src/screens/title_screen.gd")
@@ -32,6 +33,8 @@ var music := AudioStreamPlayer.new()
 var music_name := ""
 var sfx_players: Array[AudioStreamPlayer] = []
 var last_save_error := ""
+## The supplied game's language, which engine text on Auto follows.
+var content_language := ""
 
 ## The interface theme. A theme set on the root window stops at this Node and
 ## at the CanvasLayer the screens live on, so each screen, dialog and layer
@@ -45,6 +48,9 @@ func set_ui_theme(t: Theme) -> void:
 		if c is Control: c.theme = t
 
 func _ready() -> void:
+	# Engine text is translated where the code asks for it (tr()), never by
+	# matching a control's text: the game's own text must stay as supplied.
+	get_tree().root.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 	set_ui_theme(UI.make_theme())
 	get_viewport().size_changed.connect(inset_screen)
 	get_window().size_changed.connect(func(): Prefs.fit_orientation(get_window()))
@@ -60,6 +66,10 @@ func _ready() -> void:
 		add_child(p)
 		sfx_players.append(p)
 	settings.load("user://settings.cfg")
+	# The import screen and the title before the game is read are in the
+	# language of the game opened last.
+	content_language = str(settings.get_value("interface", "content_language", ""))
+	apply_language()
 	set_ui_theme(UI.make_theme(Prefs.text_size(self)))
 	get_window().files_dropped.connect(_on_files_dropped)
 	_apply_display_settings()
@@ -92,6 +102,24 @@ func set_setting(section: String, key: String, value) -> void:
 	settings.save("user://settings.cfg")
 	if section == "display": _apply_display_settings()
 	if section == "audio": _apply_audio()
+	if [section, key] == ["interface", "language"] and apply_language():
+		set_ui_theme(UI.make_theme(Prefs.text_size(self)))
+
+## Engine text in the chosen language, or the game's on Auto. True when that
+## changed the language.
+func apply_language() -> bool:
+	var before := EngineLanguage.current
+	EngineLanguage.apply(EngineLanguage.resolve(str(settings.get_value("interface", "language", EngineLanguage.AUTO)), content_language))
+	return EngineLanguage.current != before
+
+## [system, game] the first time a game opens in another language than the
+## system's, both with engine text, before any language was chosen.
+func language_question() -> Array:
+	if settings.has_section_key("interface", "language"): return []
+	var system := EngineLanguage.supported(OS.get_locale())
+	var game_code := EngineLanguage.supported(content_language)
+	if system.is_empty() or game_code.is_empty() or system == game_code: return []
+	return [system, game_code]
 
 ## False in checks, which must not re-measure graphics on the title.
 var benchmark_allowed := true
@@ -117,7 +145,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 func save_picture() -> String:
 	# A headless display draws nothing, and never finishes a frame.
 	if DisplayServer.get_name() == "headless":
-		_toast("The picture could not be saved.")
+		_toast(tr("The picture could not be saved."))
 		return ""
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()
@@ -130,7 +158,7 @@ func save_picture() -> String:
 		path = dir.path_join("gof2-%s-%d.png" % [stamp, n])
 		n += 1
 	var ok := img != null and img.save_png(path) == OK
-	_toast("Picture saved: " + ProjectSettings.globalize_path(path) if ok else "The picture could not be saved.")
+	_toast(tr("Picture saved: ") + ProjectSettings.globalize_path(path) if ok else tr("The picture could not be saved."))
 	return path if ok else ""
 
 ## A short line at the top of the screen that fades by itself.
@@ -171,7 +199,10 @@ func activate(content_id: String) -> bool:
 	catalogue = Catalogue.new(lib)
 	UI.library = lib
 	settings.set_value("content", "active", content_id)
+	content_language = EngineLanguage.content_language(lib.language, Array(lib.strings))
+	settings.set_value("interface", "content_language", content_language)
 	settings.save("user://settings.cfg")
+	if apply_language(): set_ui_theme(UI.make_theme(Prefs.text_size(self)))
 	return true
 
 # ------------------------------------------------------------------ screens
@@ -281,17 +312,17 @@ func save_game(slot: int) -> bool:
 	last_save_error = ""
 	var path := save_path(slot)
 	if path.is_empty():
-		last_save_error = "Invalid save slot."
+		last_save_error = tr("Invalid save slot.")
 		return false
 	if DirAccess.make_dir_recursive_absolute(path.get_base_dir()) != OK:
-		last_save_error = "Could not create the save folder."
+		last_save_error = tr("Could not create the save folder.")
 		return false
 	# Write and flush a sibling first. A failed write must not truncate the
 	# player's previous checkpoint; rename only after serialization succeeds.
 	var temporary := path + ".tmp"
 	var f := FileAccess.open(temporary, FileAccess.WRITE)
 	if f == null:
-		last_save_error = "Could not write the save file."
+		last_save_error = tr("Could not write the save file.")
 		return false
 	var d := game.session.to_dict()
 	d.saved_at = Time.get_datetime_string_from_system()
@@ -305,7 +336,7 @@ func save_game(slot: int) -> bool:
 	if error == OK: error = DirAccess.rename_absolute(temporary, path)
 	if error != OK:
 		DirAccess.remove_absolute(temporary)
-		last_save_error = "Could not replace the save file. Your previous save is unchanged."
+		last_save_error = tr("Could not replace the save file. Your previous save is unchanged.")
 		return false
 	return true
 
@@ -329,11 +360,11 @@ func save_summary(slot: int, backup := false) -> Dictionary:
 ## Writes the current game to a file of the player's choosing, to carry to
 ## another device. It holds the save only, never the game's content.
 func export_save(path: String) -> String:
-	if game == null: return "There is no game to export."
+	if game == null: return tr("There is no game to export.")
 	var d := game.session.to_dict()
 	d.saved_at = Time.get_datetime_string_from_system()
 	var f := FileAccess.open(path, FileAccess.WRITE)
-	if f == null: return "Could not write %s." % path.get_file()
+	if f == null: return tr("Could not write %s.") % path.get_file()
 	f.store_string(JSON.stringify(d))
 	f.close()
 	return ""
@@ -343,7 +374,7 @@ func export_save(path: String) -> String:
 func import_save(path: String) -> String:
 	var parser := JSON.new()
 	if parser.parse(FileAccess.get_file_as_string(path)) != OK or not parser.data is Dictionary:
-		return "%s is not a save file." % path.get_file()
+		return tr("%s is not a save file.") % path.get_file()
 	var g := _make_game()
 	var error := g.session.from_dict(parser.data)
 	if not error.is_empty(): return error
@@ -359,7 +390,7 @@ func pick_save_file(saving: bool, done: Callable) -> void:
 	dialog.use_native_dialog = true
 	dialog.access = FileDialog.ACCESS_FILESYSTEM
 	dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE if saving else FileDialog.FILE_MODE_OPEN_FILE
-	dialog.filters = PackedStringArray(["*.json ; Galaxy on Fire 2 save"])
+	dialog.filters = PackedStringArray([tr("*.json ; Galaxy on Fire 2 save")])
 	if saving: dialog.current_file = "gof2-save-%s.json" % Time.get_date_string_from_system()
 	dialog.file_selected.connect(func(path: String):
 		dialog.queue_free()
@@ -381,7 +412,7 @@ var load_notice := ""
 func load_game(slot: int) -> String:
 	var d := save_summary(slot)
 	var g := _make_game()
-	var error := "Nothing is saved in this slot." if d.is_empty() else g.session.from_dict(d)
+	var error := tr("Nothing is saved in this slot.") if d.is_empty() else g.session.from_dict(d)
 	if not error.is_empty():
 		# A damaged save falls back to the copy it replaced.
 		var b := save_summary(slot, true)
@@ -390,7 +421,7 @@ func load_game(slot: int) -> String:
 		if not fallback.session.from_dict(b).is_empty(): return error
 		g = fallback
 		if not d.is_empty() or FileAccess.file_exists(save_path(slot)):
-			load_notice = "This save was damaged. Its previous copy was loaded instead."
+			load_notice = tr("This save was damaged. Its previous copy was loaded instead.")
 	g.resume()
 	game = g
 	if g.session.in_void: show_flight()

@@ -12,6 +12,8 @@ extends RefCounted
 ##                        scaled to its size and centred where it sat.
 ## The simulation never reads these files.
 
+const EngineLanguage := preload("res://src/presentation/engine_language.gd")
+
 ## Set by engine checks so a test never reads a player's real mods.
 static var only_root := ""
 
@@ -90,20 +92,20 @@ static func sniff(bytes: PackedByteArray) -> String:
 ## why not. Any earlier replacement of it in the user folder goes.
 static func install(folder: String, name: String, source: String) -> String:
 	var f := FileAccess.open(source, FileAccess.READ)
-	if f == null: return "The file could not be opened."
-	if f.get_length() > LIMIT: return "The file is larger than 64 MiB."
+	if f == null: return EngineLanguage.translate("The file could not be opened.")
+	if f.get_length() > LIMIT: return EngineLanguage.translate("The file is larger than 64 MiB.")
 	var bytes := f.get_buffer(f.get_length())
 	f.close()
 	var kind := sniff(bytes)
 	var wanted := ["png"] if folder in IMAGE_FOLDERS else (["glb"] if folder == "models" else ["ogg", "mp3", "wav"])
 	if not kind in wanted:
-		if folder == "models": return "Choose a binary glTF (.glb) file."
-		return "Choose a PNG image." if folder in IMAGE_FOLDERS else "Choose an OGG Vorbis, MP3 or WAV file."
+		if folder == "models": return EngineLanguage.translate("Choose a binary glTF (.glb) file.")
+		return EngineLanguage.translate("Choose a PNG image.") if folder in IMAGE_FOLDERS else EngineLanguage.translate("Choose an OGG Vorbis, MP3 or WAV file.")
 	var target := user_root().path_join(folder).path_join(name + "." + kind)
 	var tmp := target.get_basename() + ".new." + kind
 	DirAccess.make_dir_recursive_absolute(target.get_base_dir())
 	var out := FileAccess.open(tmp, FileAccess.WRITE)
-	if out == null: return "The mods folder could not be written."
+	if out == null: return EngineLanguage.translate("The mods folder could not be written.")
 	out.store_buffer(bytes)
 	out.close()
 	# Check it reads before it replaces anything.
@@ -114,7 +116,7 @@ static func install(folder: String, name: String, source: String) -> String:
 		_: readable = audio_file(tmp, kind) != null
 	if not readable:
 		DirAccess.remove_absolute(tmp)
-		return "The file could not be read as " + kind.to_upper() + "."
+		return EngineLanguage.translate("The file could not be read as %s.") % kind.to_upper()
 	restore(folder, name)
 	DirAccess.rename_absolute(tmp, target)
 	return ""

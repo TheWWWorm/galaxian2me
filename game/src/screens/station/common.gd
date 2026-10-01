@@ -2,6 +2,7 @@ extends RefCounted
 ## Shared pieces for the docked panels: item icons from the imported sheet,
 ## item rows and the attribute summary the original shows for an item.
 
+const EngineLanguage := preload("res://src/presentation/engine_language.gd")
 const UI := preload("res://src/presentation/ui.gd")
 const Catalogue := preload("res://src/content/catalogue.gd")
 
@@ -47,7 +48,7 @@ static func item_facts(library, cat, id: int) -> Array:
 			var v: int = cat.attr(id, l[0])
 			var text := str(v)
 			if l[0] == Catalogue.A_RELOAD or l[0] == Catalogue.A_SHIELD_RECHARGE or l[0] == Catalogue.A_BOOST_LENGTH or l[0] == Catalogue.A_SCAN_LOCK:
-				text = "%.1f s" % (v / 1000.0)
+				text = EngineLanguage.translate("%.1f s") % (v / 1000.0)
 			if l[0] == Catalogue.A_COMPRESSION or l[0] == Catalogue.A_BOOST_SPEED: text += "%"
 			out.append([library.text(l[1]), text, l[0], v])
 	if cat.has_attr(id, Catalogue.A_SCAN_ASTEROIDS) and cat.attr(id, Catalogue.A_SCAN_ASTEROIDS) == 1:
@@ -84,7 +85,7 @@ static func fact_rows(library, cat, id: int, against := -1) -> Array[Control]:
 		if against >= 0 and f.size() > 2 and theirs.has(f[2]) and int(f[3]) != int(theirs[f[2]]):
 			var diff: int = int(f[3]) - int(theirs[f[2]])
 			var seconds: bool = f[1].ends_with(" s")
-			var amount: String = ("%.1f s" % (absi(diff) / 1000.0)) if seconds else str(absi(diff))
+			var amount: String = (EngineLanguage.translate("%.1f s") % (absi(diff) / 1000.0)) if seconds else str(absi(diff))
 			if f[1].ends_with("%"): amount += "%"
 			var better := (diff < 0) if LOWER_BETTER.has(f[2]) else (diff > 0)
 			out.append(fact_line(f[0], f[1], ("+" if diff > 0 else "−") + amount, better))

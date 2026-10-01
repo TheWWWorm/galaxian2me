@@ -89,7 +89,7 @@ func _draw_details() -> void:
 	detail.add_child(progress)
 	var origin := int(data.station)
 	var location: String = app.catalogue.station_name(origin) if origin >= 0 else "—"
-	detail.add_child(UI.label("%s %s  ·  %d per production" % [app.library.text(133), location, int(data.batch)], 14, UI.TEXT_DIM))
+	detail.add_child(UI.label(tr("%s %s  ·  %d per production") % [app.library.text(133), location, int(data.batch)], 14, UI.TEXT_DIM))
 	ingredients = VBoxContainer.new()
 	ingredients.add_theme_constant_override("separation", 3)
 	detail.add_child(ingredients)
@@ -117,11 +117,11 @@ func _draw_actions() -> void:
 	for row in data.get("ingredients", []):
 		if int(row.item) == selected_item: available = mini(int(row.remaining), int(row.cargo))
 	if selected_item < 0:
-		actions.add_child(UI.paragraph("Select a material to contribute from the cargo hold.", 14, UI.TEXT_DIM))
+		actions.add_child(UI.paragraph(tr("Select a material to contribute from the cargo hold."), 14, UI.TEXT_DIM))
 		return
 	actions.add_child(UI.label(app.catalogue.item_name(selected_item), 16))
 	if available <= 0:
-		actions.add_child(UI.paragraph("No carried material is needed for this ingredient.", 14, UI.TEXT_DIM))
+		actions.add_child(UI.paragraph(tr("No carried material is needed for this ingredient."), 14, UI.TEXT_DIM))
 		return
 	amount = clampi(amount, 1, available)
 	var quantity := HBoxContainer.new()
@@ -129,13 +129,13 @@ func _draw_actions() -> void:
 	quantity.add_child(UI.button("−", func(): amount = maxi(1, amount - 1); _draw_actions()))
 	quantity.add_child(UI.label(str(amount), 16))
 	quantity.add_child(UI.button("+", func(): amount = mini(available, amount + 1); _draw_actions()))
-	quantity.add_child(UI.button("Max", func(): amount = available; _draw_actions()))
+	quantity.add_child(UI.button(tr("Max"), func(): amount = available; _draw_actions()))
 	var order: Dictionary = game.blueprint_offer(selected, selected_item, amount)
 	if not str(order.error).is_empty():
 		actions.add_child(UI.paragraph(str(order.error), 14, UI.TEXT_WARN))
 		return
-	var label := "Contribute %d" % amount
-	if int(order.fee) > 0: label += "  (" + UI.money(int(order.fee)) + ")"
+	var label := tr("Contribute %d") % amount
+	if int(order.fee) > 0: label = tr("Contribute %d  (%s)") % [amount, UI.money(int(order.fee))]
 	actions.add_child(UI.button(label, _submit.bind(order)))
 
 func _submit(order: Dictionary) -> void:

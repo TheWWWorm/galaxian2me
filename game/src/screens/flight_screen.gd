@@ -172,7 +172,7 @@ func _update_touch_context() -> void:
 	if touch == null: return
 	var story = space.story
 	var skip: bool = story != null and story.message().is_empty() and story.can_skip_wait()
-	touch.radio_label = "Skip" if skip else ""
+	touch.radio_label = tr("Skip") if skip else ""
 	# As in Deep, buttons for missing equipment stay away until it is fitted.
 	touch.set_fitted({"boost": int(game.session.ship_stats().get("boost_length", 0)) > 0,
 		"secondary": not space.secondary_launchers().is_empty()})
@@ -258,8 +258,8 @@ func _physics_process(delta: float) -> void:
 			break
 	if app.screen != self or is_queued_for_deletion() or defeated: return
 	if touch != null:
-		touch.set_warp("Time ×%d" % space.time_scale if space.time_scale > 1 else ("Faster" if space.time_warp_allowed(2) else ""))
-		touch.set_use({"dock": "Dock", "gate": "Fly in", "travel": "Travel", "wormhole": "Fly in", "mine": "Mine", "stop_mining": "Stop"}.get(space.target_action(), ""))
+		touch.set_warp(tr("Time ×%d") % space.time_scale if space.time_scale > 1 else (tr("Faster") if space.time_warp_allowed(2) else ""))
+		touch.set_use({"dock": tr("Dock"), "gate": tr("Fly in"), "travel": tr("Travel"), "wormhole": tr("Fly in"), "mine": tr("Mine"), "stop_mining": tr("Stop")}.get(space.target_action(), ""))
 		if not touch.use_label.is_empty(): touch.queue_redraw()
 	_follow_combat_music()
 	if space.portal_arriving() or space.using_jump_drive: return
@@ -445,9 +445,9 @@ func _on_event(kind: String, data: Dictionary) -> void:
 			await get_tree().create_timer(3.0).timeout
 			if app.screen != self or not is_inside_tree(): return
 			var checkpoint: Dictionary = app.slot_summary(app.AUTOSAVE_SLOT)
-			var label := "Start again"
+			var label := tr("Start again")
 			if not checkpoint.is_empty():
-				label = "Continue from %s" % app.catalogue.station_name(int(checkpoint.get("station", -1)))
+				label = tr("Continue from %s") % app.catalogue.station_name(int(checkpoint.get("station", -1)))
 			hud.game_over(label, app.recover_from_defeat, app.show_title)
 		"final_escape_failed":
 			# A timed mission loss is not a projectile hit or a successful
@@ -497,7 +497,7 @@ func set_photo(on: bool) -> void:
 		bar.grow_horizontal = Control.GROW_DIRECTION_BOTH
 		bar.grow_vertical = Control.GROW_DIRECTION_BEGIN
 		bar.offset_bottom = -16
-		var caption := UI.label("PHOTO MODE  ·  drag, arrows or right stick to orbit  ·  wheel, +/- or triggers to zoom  ·  F12 saves a picture  ·  %s or Esc to return" %
+		var caption := UI.label(tr("PHOTO MODE  ·  drag, arrows or right stick to orbit  ·  wheel, +/- or triggers to zoom  ·  F12 saves a picture  ·  %s or Esc to return") %
 			preload("res://src/presentation/preferences.gd").key_name("photo"), 13, UI.TEXT_DIM)
 		caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		bar.add_child(caption)
@@ -506,9 +506,9 @@ func set_photo(on: bool) -> void:
 		row.add_theme_constant_override("separation", 8)
 		bar.add_child(row)
 		var zoom := func(f: float): view.photo_distance = clampf(view.photo_distance * f, 900.0, 40000.0)
-		for spec in [["Zoom in", zoom.bind(0.8)], ["Zoom out", zoom.bind(1.25)],
-				["Save picture", _photo_picture], ["Hide bar", func(): photo_caption.visible = false],
-				["Back to flight", func(): set_photo(false)]]:
+		for spec in [[tr("Zoom in"), zoom.bind(0.8)], [tr("Zoom out"), zoom.bind(1.25)],
+				[tr("Save picture"), _photo_picture], [tr("Hide bar"), func(): photo_caption.visible = false],
+				[tr("Back to flight"), func(): set_photo(false)]]:
 			var b := UI.button(spec[0], spec[1])
 			b.alignment = HORIZONTAL_ALIGNMENT_CENTER
 			b.custom_minimum_size = Vector2(120, 44)
@@ -656,7 +656,7 @@ func open_actions() -> void:
 	# 292: "Autopilot", the original's list of places to fly to.
 	box.add_child(_quick_icon(UI.button(app.library.text(292), open_autopilot, not space.autopilot_choices().is_empty()), -1))
 	box.add_child(_quick_icon(UI.button(app.library.text(146), open_wingmen, not Wingmen.living(space).is_empty()), 5))
-	box.add_child(_quick_icon(UI.button("Back to flight", close_navigation), -1))
+	box.add_child(_quick_icon(UI.button(tr("Back to flight"), close_navigation), -1))
 	for b in box.get_children():
 		if b is Button and b.disabled: b.focus_mode = Control.FOCUS_NONE
 	for b in box.get_children():
@@ -692,7 +692,7 @@ func open_autopilot() -> void:
 		box.add_child(_quick_icon(UI.button(str(choice.label), func():
 			close_navigation()
 			space.autopilot_to(str(choice.key))), 9 if choice.key == "waypoint" else -1))
-	box.add_child(_quick_icon(UI.button("Back to flight", close_navigation), -1))
+	box.add_child(_quick_icon(UI.button(tr("Back to flight"), close_navigation), -1))
 	(box.get_child(0) as Control).grab_focus.call_deferred()
 
 ## Chooses which launcher the secondary button fires.
@@ -711,7 +711,7 @@ func open_secondaries() -> void:
 		if b.disabled: b.focus_mode = Control.FOCUS_NONE
 		elif first == null or is_same(w, current): first = b
 		box.add_child(b)
-	box.add_child(UI.button("Back to flight", close_navigation))
+	box.add_child(UI.button(tr("Back to flight"), close_navigation))
 	(first if first != null else box.get_child(box.get_child_count() - 1)).grab_focus.call_deferred()
 
 func open_wingmen() -> void:
@@ -729,9 +729,9 @@ func open_wingmen() -> void:
 		if action.disabled: action.focus_mode = Control.FOCUS_NONE
 		box.add_child(action)
 	if Wingmen.mission_waypoint(space) == null:
-		box.add_child(UI.paragraph("No mission waypoint in this area." if space.story == null
-			else "No supported unvisited mission waypoint in this area."))
-	box.add_child(UI.button("Back to flight", close_navigation))
+		box.add_child(UI.paragraph(tr("No mission waypoint in this area.") if space.story == null
+			else tr("No supported unvisited mission waypoint in this area.")))
+	box.add_child(UI.button(tr("Back to flight"), close_navigation))
 	(box.get_child(1) as Control).grab_focus.call_deferred()
 
 func _wingman_order(command: int) -> void:
@@ -752,7 +752,7 @@ func open_drive() -> void:
 	box.add_child(UI.paragraph(app.library.text(243)))
 	box.add_child(UI.button(app.library.text(38), confirm_navigation.bind({"station": -1}, "drive")))
 	box.add_child(UI.button(app.library.text(39), open_navigation.bind("drive")))
-	box.add_child(UI.button("Back to flight", close_navigation))
+	box.add_child(UI.button(tr("Back to flight"), close_navigation))
 	(box.get_child(2) as Control).grab_focus.call_deferred()
 
 func open_navigation(mode: String) -> void:

@@ -41,7 +41,7 @@ func _ready() -> void:
 	roll_box.add_child(_centred(lib.text(25), 16, UI.TEXT))
 	roll_box.add_child(_centred(lib.text(23), 13, UI.TEXT_DIM))
 	roll_box.add_child(_centred(lib.text(24), 16, UI.TEXT_GOOD))
-	roll_box.add_child(_centred("-This engine-\nAn independent remake that plays the game from your own JAR.\nIts source is licensed under the Apache License 2.0.\n\nMicro3D model decoder ported from J2ME-Loader\n(Yury Kharchenko, Apache License 2.0)\n\nMade with the Godot Engine (MIT license)", 13, UI.TEXT_DIM))
+	roll_box.add_child(_centred(tr("-This engine-\nAn independent remake that plays the game from your own JAR.\nIts source is licensed under the Apache License 2.0.\n\nMicro3D model decoder ported from J2ME-Loader\n(Yury Kharchenko, Apache License 2.0)\n\nMade with the Godot Engine (MIT license)"), 13, UI.TEXT_DIM))
 	var tail := Control.new()
 	tail.custom_minimum_size.y = 200
 	roll_box.add_child(tail)

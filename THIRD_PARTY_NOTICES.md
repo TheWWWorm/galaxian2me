@@ -8,6 +8,10 @@
 
 `game/src/import/midi_synth.gd` is ported from the Abyssal engine's original procedural synthesizer (Apache-2.0). It contains no instrument samples; the music it renders is the player's own MIDI data.
 
+## Interface fonts for Chinese, Japanese and Korean
+
+`game/src/locale/noto_sans_sc.otf`, `noto_sans_jp.otf` and `noto_sans_kr.otf` are subsets of **Noto Sans CJK** (Regular, version 2.004, SC, JP and KR faces), copyright 2014-2021 Adobe, with Reserved Font Name 'Source', licensed under the [SIL Open Font License 1.1](licenses/OFL-1.1.txt). Each subset holds only the characters the matching engine text catalog uses; `tools/engine_text.py fonts` writes them from the unmodified upstream collection. Source: https://github.com/notofonts/noto-cjk . Keep the license with every distribution that includes these files.
+
 ## Godot Engine
 
 Exported builds embed the Godot Engine (MIT license) and its third-party components; their notices are distributed with each export.

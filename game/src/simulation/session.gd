@@ -291,10 +291,10 @@ const BlueprintRules := preload("res://src/simulation/blueprints.gd")
 
 func _validate_save(d: Dictionary) -> String:
 	if not _whole(d.get("format")) or int(d.format) != SAVE_FORMAT:
-		return "This save was written by an incompatible version."
+		return tr("This save was written by an incompatible version.")
 	if not d.get("content") is String or d.content != content_id:
-		return "This save belongs to a different game file."
-	var invalid := "The save is incomplete or contains invalid state."
+		return tr("This save belongs to a different game file.")
+	var invalid := tr("The save is incomplete or contains invalid state.")
 	if d.has("in_void") and not d.in_void is bool: return invalid
 	for key in ["credits", "story_step", "playtime_ms", "station", "system"]:
 		if not _whole(d.get(key)): return invalid
@@ -342,7 +342,7 @@ func _validate_save(d: Dictionary) -> String:
 		if not (shield_value is int or shield_value is float): return invalid
 		if not is_finite(float(shield_value)) or shield_value < 0: return invalid
 	if cat == null or cat.station(int(d.station)).is_empty() or cat.ship(int(d.ship.index)).is_empty() or cat.system(int(d.system)).is_empty():
-		return "The save refers to content this game file does not have."
+		return tr("The save refers to content this game file does not have.")
 	if cat.system_of_station(int(d.station)) != int(d.system): return invalid
 	if not BlueprintRules.valid_saved(d.get("blueprints", {}), cat): return invalid
 	if d.equipment.size() != 4 or d.reputation.size() != 2 or d.markets.size() > 3: return invalid

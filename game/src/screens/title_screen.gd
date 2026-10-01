@@ -11,6 +11,7 @@ const OptionsPanel := preload("res://src/screens/options_panel.gd")
 const HelpPanel := preload("res://src/screens/help_panel.gd")
 const Benchmark := preload("res://src/presentation/benchmark.gd")
 const TouchControls := preload("res://src/flight/touch_controls.gd")
+const EngineLanguage := preload("res://src/presentation/engine_language.gd")
 
 var app
 var scene := Node3D.new()
@@ -54,7 +55,7 @@ func _ready() -> void:
 	panel_holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(panel_holder)
 	# The engine's own version first, then the supplied game's.
-	var versions := "Remake %s  ·  %s %s" % [ProjectSettings.get_setting("application/config/version", ""),
+	var versions := tr("Remake %s  ·  %s %s") % [ProjectSettings.get_setting("application/config/version", ""),
 		app.library.manifest.get("name", ""), app.library.manifest.get("version", "")]
 	var version := UI.label(versions, 20 if _large_menu() else 13, UI.TEXT_DIM)
 	version.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
@@ -67,10 +68,48 @@ func _ready() -> void:
 	version.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
 	add_child(version)
 	app.play_music("gof2_theme")
-	if Benchmark.due(app):
-		var b := Benchmark.new()
-		b.app = app
-		add_child(b)
+	var question: Array = app.language_question()
+	# The graphics measurement waits for the answer: both take the screen.
+	if not question.is_empty(): _ask_language.call_deferred(question[0], question[1])
+	elif Benchmark.due(app): _measure()
+
+func _measure() -> void:
+	var b := Benchmark.new()
+	b.app = app
+	add_child(b)
+
+## Asked once, the first time a game in another language than the system's
+## is opened: engine text in the system's language, or everything in the
+## game's. The question is put in both, since either may be the one the
+## player reads.
+func _ask_language(system: String, game_code: String) -> void:
+	var f := UI.Frame.new(EngineLanguage.text_in(system, "Language"))
+	f.custom_minimum_size = Vector2(520, 0)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 10)
+	f.add_child(box)
+	for code in [system, game_code]:
+		var lines := [EngineLanguage.text_in(code, "System language: %s") % EngineLanguage.native_name(system),
+			EngineLanguage.text_in(code, "Game language: %s") % EngineLanguage.native_name(game_code),
+			EngineLanguage.text_in(code, "Show the engine's menus and messages in the system language? The game's own text stays in the game's language.")]
+		box.add_child(UI.paragraph("\n".join(lines), 15 if code == system else 13, UI.TEXT if code == system else UI.TEXT_DIM))
+	var answer := func(choice: String):
+		# Auto keeps following the game for everything; a language is fixed.
+		f.queue_free()
+		var before := EngineLanguage.current
+		app.set_setting("interface", "language", choice)
+		# The title is drawn again in the new language.
+		if EngineLanguage.current != before:
+			app.show_title()
+			return
+		_fill_menu()
+		if Benchmark.due(app): _measure()
+	var first := UI.button(EngineLanguage.native_name(system), answer.bind(system))
+	box.add_child(first)
+	box.add_child(UI.button(EngineLanguage.native_name(game_code), answer.bind(EngineLanguage.AUTO)))
+	box.add_child(UI.paragraph(EngineLanguage.text_in(system, "You can change this in Options › Game › Engine language."), 13, UI.TEXT_DIM))
+	_show_panel(f)
+	first.grab_focus.call_deferred()
 
 func _fill_menu() -> void:
 	for c in menu.get_children(): c.queue_free()
@@ -173,14 +212,14 @@ func _load() -> void:
 	for slot in app.LOAD_SLOTS:
 		var d: Dictionary = app.slot_summary(slot)
 		var label: String = app.library.text(26) if d.is_empty() else "%s — %s  (%s)" % [app.catalogue.station_name(int(d.get("station", 0))), UI.money(int(d.get("credits", 0))), str(d.get("saved_at", "")).replace("T", " ")]
-		if slot == app.AUTOSAVE_SLOT: label = "Autosave — " + label
+		if slot == app.AUTOSAVE_SLOT: label = tr("Autosave — %s") % label
 		if bool(d.get("in_void", false)): label = app.library.text(269) + " — " + label
 		var b := UI.button(label, func():
 			var err: String = app.load_game(slot)
 			if not err.is_empty(): _message(err), not d.is_empty())
 		box.add_child(b)
 	if not OS.has_feature("web"):
-		box.add_child(UI.button("Import save…", func(): app.pick_save_file(false, func(path):
+		box.add_child(UI.button(tr("Import save…"), func(): app.pick_save_file(false, func(path):
 			var err: String = app.import_save(path)
 			if not err.is_empty(): _message(err))))
 	box.add_child(UI.button(app.library.text(65), func(): f.queue_free(); _fill_menu()))
@@ -189,7 +228,9 @@ func _load() -> void:
 func _options() -> void:
 	var p := OptionsPanel.new()
 	p.app = self.app
-	p.closed.connect(_fill_menu)
+	var language := EngineLanguage.current
+	# A new engine language redraws the title in it.
+	p.closed.connect(func(): app.show_title() if EngineLanguage.current != language else _fill_menu())
 	_show_panel(p)
 
 func _help() -> void:

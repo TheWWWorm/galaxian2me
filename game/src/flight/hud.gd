@@ -196,7 +196,7 @@ func _draw() -> void:
 			draw_rect(Rect2(Vector2.ZERO, size), Color(1, 1, 1, clampf(story.flash, 0.0, peak)))
 		if story.hud_hidden: _draw_radio(size, radio_line)
 		if not touch_layout and skip_hint and (story.can_skip_wait() or radio_on and story.hud_hidden):
-			_centered(Vector2(size.x / 2.0, size.y - 28.0 * k), "Enter / click / A: skip", 12, Color(UI.TEXT_DIM, 0.8), true)
+			_centered(Vector2(size.x / 2.0, size.y - 28.0 * k), tr("Enter / click / A: skip"), 12, Color(UI.TEXT_DIM, 0.8), true)
 		if story.hud_hidden: return
 	# Looking around moves the view off the ship's line of fire.
 	if view == null or (absf(view.look_yaw) < 0.15 and absf(view.look_pitch) < 0.15):
@@ -235,10 +235,10 @@ func _draw() -> void:
 	if space.autopilot:
 		var pilot: String = app.library.text(292).to_upper()
 		if space.time_scale > 1: pilot += "  ×%d" % space.time_scale
-		elif not touch_layout and space.time_warp_allowed(2): pilot += "  ·  %s: faster" % Prefs.key_name("time_warp")
+		elif not touch_layout and space.time_warp_allowed(2): pilot += tr("  ·  %s: faster") % Prefs.key_name("time_warp")
 		_centered(Vector2(size.x / 2.0, centre.y + 64 * k), pilot, 12, FRIEND, true)
 	elif space.time_scale > 1:
-		_centered(Vector2(size.x / 2.0, centre.y + 64 * k), "TIME ×%d" % space.time_scale, 12, FRIEND, true)
+		_centered(Vector2(size.x / 2.0, centre.y + 64 * k), tr("TIME ×%d") % space.time_scale, 12, FRIEND, true)
 	var hint := action_hint() if bool(app.setting("interface", "hints", true)) else ""
 	if not hint.is_empty():
 		# Above the crosshair: the original captions landmarks below and right of it.
@@ -246,10 +246,10 @@ func _draw() -> void:
 	if bool(app.setting("interface", "hints", true)) and not touch_layout and space.target == null:
 		var four: Array = ["steer_up", "steer_left", "steer_down", "steer_right"].map(func(a): return Prefs.key_name(a))
 		var keys_text: String = "/".join(four)
-		if four == ["Up", "Left", "Down", "Right"]: keys_text = "Arrows"
+		if four == ["Up", "Left", "Down", "Right"]: keys_text = tr("Arrows")
 		elif four == ["W", "A", "S", "D"]: keys_text = "WASD"
-		var steer := ("Mouse / " if not touch_layout else "") + keys_text
-		var keys := "%s steer  ·  %s fire  ·  %s boost  ·  %s autopilot  ·  %s fly to…  ·  %s target  ·  %s actions" % [steer,
+		var steer := tr("Mouse / %s") % keys_text if not touch_layout else keys_text
+		var keys := tr("%s steer  ·  %s fire  ·  %s boost  ·  %s autopilot  ·  %s fly to…  ·  %s target  ·  %s actions") % [steer,
 			Prefs.key_name("fire"), Prefs.key_name("boost"), Prefs.key_name("autopilot"), Prefs.key_name("autopilot_menu"),
 			Prefs.key_name("next_target"), Prefs.key_name("action_menu")]
 		var room := size.x - 2.0 * (320.0 * k + MARGIN * 2.0)
@@ -337,7 +337,7 @@ func _standing_color(b: Body) -> Color:
 ## Distances as the original shows them: a tenth of a unit is a metre.
 func _metres(units: float) -> String:
 	var m := units / 10.0
-	return "%.1f km" % (m / 1000.0) if m >= 10000.0 else "%d m" % int(m)
+	return tr("%.1f km") % (m / 1000.0) if m >= 10000.0 else tr("%d m") % int(m)
 
 # ------------------------------------------------------------------ panels
 
@@ -367,7 +367,7 @@ func _draw_location() -> void:
 			[ENEMY, NEUTRAL, UI.TEXT_DIM, FRIEND][safety], 100 * k, HORIZONTAL_ALIGNMENT_RIGHT)
 	_text(Vector2(x, r.position.y + 19 * k), title.to_upper(), 15, UI.TEXT, w - 90 * k)
 	var st: Dictionary = s.ship_stats()
-	_text(Vector2(x, r.position.y + 36 * k), "CARGO  %d / %d t" % [s.cargo_used(), int(st.cargo_capacity)], 11, LABEL)
+	_text(Vector2(x, r.position.y + 36 * k), tr("CARGO  %d / %d t") % [s.cargo_used(), int(st.cargo_capacity)], 11, LABEL)
 	_text(Vector2(x + 150 * k, r.position.y + 36 * k), UI.money(int(s.credits)), 11, UI.TEXT_GOOD)
 	var fill := float(s.cargo_used()) / maxf(1.0, float(st.cargo_capacity))
 	_gauge(Vector2(x, r.position.y + 42 * k), 130 * k, fill, WAYPOINT if fill < 1.0 else UI.TEXT_WARN, 20)
@@ -389,11 +389,11 @@ func _draw_readouts() -> void:
 	elif _challenge():
 		# The contest's running score: your kills against the rival's.
 		_centered(Vector2(size.x / 2.0, top + 30 * k), "%d : %d" % [int(space.kills), int(space.stats.get("rival_kills", 0))], 22, UI.TEXT, true)
-		_centered(Vector2(size.x / 2.0, top + 50 * k), "KILLS  YOU : RIVAL", 11, UI.TEXT_DIM, true)
+		_centered(Vector2(size.x / 2.0, top + 50 * k), tr("KILLS  YOU : RIVAL"), 11, UI.TEXT_DIM, true)
 	if space.mining != null:
 		var st2: Dictionary = s.ship_stats()
 		var load: int = s.cargo_used() + int(space.mining.tons)
-		_centered(Vector2(size.x / 2.0, top + 30 * k), "%d / %d t" % [load, int(st2.cargo_capacity)], 18, UI.TEXT_WARN if load > int(st2.cargo_capacity) else UI.TEXT, true)
+		_centered(Vector2(size.x / 2.0, top + 30 * k), tr("%d / %d t") % [load, int(st2.cargo_capacity)], 18, UI.TEXT_WARN if load > int(st2.cargo_capacity) else UI.TEXT, true)
 
 ## The original's own HUD (the default): its corner panels and state icons,
 ## the armour and shield bars at the foot, the chosen secondary weapon and
@@ -508,7 +508,7 @@ func _draw_original(size: Vector2) -> void:
 		var base_y := size.y - ll_size.y + 15.0 * S
 		if ship != null: draw_texture_rect(ship, Rect2(Vector2(size.x / 2.0 - 4.0 * S - ship.get_width() * S, base_y - ship.get_height() * S), ship.get_size() * S), false)
 		_text(Vector2(size.x / 2.0, base_y), "%d%%" % percent, 14, UI.TEXT)
-	if space.turret_mode: _centered(Vector2(size.x / 2.0, size.y - ll_size.y - 8.0 * S), "TURRET VIEW", 11, FRIEND, true)
+	if space.turret_mode: _centered(Vector2(size.x / 2.0, size.y - ll_size.y - 8.0 * S), tr("TURRET VIEW"), 11, FRIEND, true)
 	_draw_current_lock(size, S)
 	_draw_readouts()
 
@@ -563,8 +563,8 @@ func _draw_vitals(size: Vector2) -> void:
 	vitals_bottom = r.end.y
 	_plate(r)
 	var col := (w - 24 * k) / 3.0
-	var rows := [["HULL", p.hull, p.hull_max, HULL_COLOR], ["ARMOR", p.armor, p.armor_max, ARMOR_COLOR],
-		["SHIELD", int(p.shield), p.shield_max, SHIELD_COLOR]]
+	var rows := [[tr("HULL"), p.hull, p.hull_max, HULL_COLOR], [tr("ARMOR"), p.armor, p.armor_max, ARMOR_COLOR],
+		[tr("SHIELD"), int(p.shield), p.shield_max, SHIELD_COLOR]]
 	for i in 3:
 		var x := r.position.x + 12 * k + i * col
 		var row: Array = rows[i]
@@ -586,15 +586,15 @@ func _draw_vitals(size: Vector2) -> void:
 	var x0 := r.position.x + 12 * k
 	if int(st.boost_length) > 0:
 		var frac := 1.0
-		var label := "BOOST READY"
+		var label := tr("BOOST READY")
 		var color := FRIEND
 		if p.boosting:
 			frac = 1.0 - float(space.boost_time) / maxf(1.0, float(st.boost_length))
-			label = "BOOSTING"
+			label = tr("BOOSTING")
 			color = ACCENT
 		elif not space.boost_ready:
 			frac = 1.0 + float(space.boost_time) / maxf(1.0, float(st.boost_reload))
-			label = "BOOST CHARGING"
+			label = tr("BOOST CHARGING")
 			color = UI.TEXT_DIM
 		var ic := 16.0 * k
 		_icon(5, Vector2(x0, y - ic + 3 * k), ic)
@@ -602,16 +602,16 @@ func _draw_vitals(size: Vector2) -> void:
 		_text(Vector2(x0 + ic + 5 * k, y), label, 10, color)
 		_gauge(Vector2(x0 + 116 * k, y - 7 * k), 110 * k, frac, color, 16)
 	else:
-		_text(Vector2(x0, y), "NO BOOSTER", 10, UI.TEXT_DIM)
+		_text(Vector2(x0, y), tr("NO BOOSTER"), 10, UI.TEXT_DIM)
 	if space.has_cloak():
 		var cx := x0 + 240 * k
-		var label := "CLOAK READY" if space.cloak_ready() else ("CLOAKED" if space.cloak > 0 else "CLOAK")
+		var label := tr("READY") if space.cloak_ready() else (tr("CLOAKED") if space.cloak > 0 else tr("CLOAK"))
 		var color := FRIEND if space.cloak_ready() else (ACCENT if space.cloak > 0 else UI.TEXT_DIM)
 		var frac: float = 1.0 - space.cloak_progress() if space.cloak > 0 else space.cloak_progress()
 		var ic := 16.0 * k
 		_icon(12, Vector2(cx, y - ic + 3 * k), ic)
 		_icon(11, Vector2(cx, y - ic + 3 * k), ic, frac)
-		_text(Vector2(cx + ic + 4 * k, y), label.replace("CLOAK ", ""), 10, color)
+		_text(Vector2(cx + ic + 4 * k, y), label, 10, color)
 	if crew_time > 0:
 		var seconds := int(ceil(crew_time / 1000.0))
 		_text(Vector2(x0, y + 17 * k), (app.library.text(152) + "  %02d:%02d" % [seconds / 60, seconds % 60]).to_upper(), 10, FRIEND)
@@ -642,8 +642,8 @@ func _draw_weapons(size: Vector2) -> void:
 	_plate(r)
 	var x := r.position.x + 12 * k
 	var y := r.position.y + 16 * k
-	_text(Vector2(x, y), "WEAPONS", 10, LABEL)
-	if space.turret_mode: _text(Vector2(x + 70 * k, y), "TURRET VIEW", 10, FRIEND)
+	_text(Vector2(x, y), tr("WEAPONS"), 10, LABEL)
+	if space.turret_mode: _text(Vector2(x + 70 * k, y), tr("TURRET VIEW"), 10, FRIEND)
 	var ic := 16.0 * k
 	_icon(1 if space.autopilot else 2, Vector2(r.end.x - 12 * k - ic * 2 - 4 * k, y - ic + 4 * k), ic)
 	_icon(14 if bool(app.setting("controls", "auto_fire", false)) else 15, Vector2(r.end.x - 12 * k - ic, y - ic + 4 * k), ic)
@@ -652,7 +652,7 @@ func _draw_weapons(size: Vector2) -> void:
 		_text(Vector2(x, y), "—", 13, UI.TEXT_DIM)
 	for id in guns:
 		var g: Dictionary = guns[id]
-		var name: String = app.catalogue.item_name(int(id)) if int(id) >= 0 else "Gun"
+		var name: String = app.catalogue.item_name(int(id)) if int(id) >= 0 else tr("Gun")
 		_text(Vector2(x, y), ("%d × " % int(g.count)) + name, 13, UI.TEXT, 190 * k)
 		_gauge(Vector2(r.end.x - 82 * k, y - 8 * k), 70 * k, g.ready, ACCENT if g.ready >= 1.0 else UI.TEXT_DIM, 8)
 		y += 20 * k
@@ -743,18 +743,18 @@ func _draw_current_lock(size: Vector2, S: float) -> void:
 ## What the fire button does to the locked station, gate or asteroid, or
 ## that holding it in the crosshair locks it; empty when nothing applies.
 func action_hint() -> String:
-	var press := "Fire" if touch_layout else "%s / left click / RT" % Prefs.key_name("fire")
+	var press := tr("Fire") if touch_layout else tr("%s / left click / RT") % Prefs.key_name("fire")
 	if space.mining_target != null:
-		return "%s: stop mining and keep the ore" % press if space.mining != null else "%s: cancel" % press
+		return tr("%s: stop mining and keep the ore") % press if space.mining != null else tr("%s: cancel") % press
 	var t: Body = space.target
 	if t == null or not t.alive or t.is_ship() or space.autopilot: return ""
 	# Asteroids drift across the reticle all the time in a field; only
 	# places to fly to get the reminder while still being scanned.
-	if not space.locked and t.kind == Body.Kind.WORMHOLE: return "Hold it in the crosshair to lock on"
-	var what: String = {"dock": "fly in and dock", "gate": "fly into the gate",
-		"travel": "fly to %s" % t.name, "wormhole": "fly into the wormhole", "mine": "mine"}.get(space.target_action(), "")
+	if not space.locked and t.kind == Body.Kind.WORMHOLE: return tr("Hold it in the crosshair to lock on")
+	var what: String = {"dock": tr("%s: fly in and dock"), "gate": tr("%s: fly into the gate"),
+		"travel": tr("%s: fly to %s"), "wormhole": tr("%s: fly into the wormhole"), "mine": tr("%s: mine")}.get(space.target_action(), "")
 	if what.is_empty(): return ""
-	return "%s: %s" % [press, what]
+	return what % [press, t.name] if space.target_action() == "travel" else what % press
 
 ## Bottom centre: the locked or selected object.
 func _draw_target(size: Vector2) -> void:
@@ -774,16 +774,16 @@ func _draw_target(size: Vector2) -> void:
 	var dist := p.pos.distance_to(t.pos) if t.kind != Body.Kind.STAR else -1.0
 	if dist >= 0.0:
 		_text(Vector2(r.end.x - 112 * k, r.position.y + 18 * k), _metres(dist), 13, UI.TEXT, 100 * k, HORIZONTAL_ALIGNMENT_RIGHT)
-	var status := "LOCKED" if space.locked else "SCANNING %d%%" % int(clampf(space.lock_time / space.lock_needed, 0.0, 1.0) * 100)
+	var status := tr("LOCKED") if space.locked else tr("SCANNING %d%%") % int(clampf(space.lock_time / space.lock_needed, 0.0, 1.0) * 100)
 	_text(Vector2(x, r.position.y + 32 * k), status, 10, FRIEND if space.locked else LABEL)
 	if ship:
-		if t.disabled: _text(Vector2(x + 110 * k, r.position.y + 32 * k), "EMP DISABLED", 10, SHIELD_COLOR)
+		if t.disabled: _text(Vector2(x + 110 * k, r.position.y + 32 * k), tr("EMP DISABLED"), 10, SHIELD_COLOR)
 		var gw := (w - 36 * k) / 2.0
 		var hull_frac := float(t.hull + t.armor) / maxf(1.0, float(t.hull_max + t.armor_max))
-		_text(Vector2(x, r.position.y + 49 * k), "HULL", 9, LABEL)
+		_text(Vector2(x, r.position.y + 49 * k), tr("HULL"), 9, LABEL)
 		_gauge(Vector2(x + 34 * k, r.position.y + 42 * k), gw - 34 * k, hull_frac, ENEMY if t.hostile else HULL_COLOR, 14)
 		if t.shield_max > 0:
-			_text(Vector2(x + gw + 12 * k, r.position.y + 49 * k), "SHLD", 9, LABEL)
+			_text(Vector2(x + gw + 12 * k, r.position.y + 49 * k), tr("SHLD"), 9, LABEL)
 			_gauge(Vector2(x + gw + 46 * k, r.position.y + 42 * k), gw - 34 * k, t.shield / maxf(1.0, float(t.shield_max)), SHIELD_COLOR, 14)
 		if not cargo.is_empty():
 			var parts: Array = []
@@ -791,7 +791,7 @@ func _draw_target(size: Vector2) -> void:
 			for p_i in range(0, pairs.size() - 1, 2):
 				if int(pairs[p_i + 1]) > 0: parts.append("%d × %s" % [int(pairs[p_i + 1]), app.catalogue.item_name(int(pairs[p_i]))])
 			var description := "—" if parts.is_empty() else ",  ".join(parts)
-			_text(Vector2(x, r.position.y + 67 * k), "CARGO  " + description, 11, UI.TEXT_GOOD, w - 24 * k)
+			_text(Vector2(x, r.position.y + 67 * k), tr("CARGO  %s") % description, 11, UI.TEXT_GOOD, w - 24 * k)
 
 func _draw_tractor(centre: Vector2) -> void:
 	var tractor: Dictionary = space.tractor_status()
@@ -1051,7 +1051,7 @@ func _draw_mining(size: Vector2) -> void:
 	if cursor != null:
 		var cs := cursor.get_size() * S
 		draw_texture_rect(cursor, Rect2(Vector2(size.x / 2.0 + m.drill * S - cs.x / 2.0, row + 2 * S - cs.y), cs), false)
-	var label := "%d t %s" % [int(m.tons), app.catalogue.item_name(int(m.ore))]
+	var label := tr("%d t %s") % [int(m.tons), app.catalogue.item_name(int(m.ore))]
 	_string(Vector2(size.x / 2.0 - 200, origin.y + 22), label, HORIZONTAL_ALIGNMENT_CENTER, 400, 16, UI.TEXT)
 
 ## A radio line in the original's box: the speaker's portrait on the left,
@@ -1216,11 +1216,11 @@ func _draw_radar(size: Vector2) -> void:
 		else:
 			draw_arc(c + flat, 4 * k, 0, TAU, 12, WAYPOINT, 1.5, true)
 	draw_colored_polygon(PackedVector2Array([c + Vector2(0, -5) * k, c + Vector2(-4, 4) * k, c + Vector2(4, 4) * k]), UI.TEXT)
-	_text(c + Vector2(-r - 4 * k, -r - 4 * k), "RADAR", 10, LABEL)
+	_text(c + Vector2(-r - 4 * k, -r - 4 * k), tr("RADAR"), 10, LABEL)
 	_text(c + Vector2(r - 60 * k, -r - 4 * k), _metres(RADAR_REACH), 10, UI.TEXT_DIM, 64 * k, HORIZONTAL_ALIGNMENT_RIGHT)
 	var threats: int = space.hostiles().filter(func(h): return h.combat_active and h.pos.distance_to(p.pos) < RADAR_REACH).size()
 	if threats > 0:
-		var warning := "·  %d HOSTILE" % threats
+		var warning := tr("·  %d HOSTILE") % threats
 		var at := c + Vector2(-r + 44 * k, -r - 4 * k)
 		# On the small touch scope the header has no room between the title
 		# and the range; the count goes under the scope instead.
@@ -1288,7 +1288,7 @@ func set_paused(on: bool) -> void:
 			f.visible = true
 			(box.get_child(1) as Control).grab_focus.call_deferred())
 		center.add_child(options)))
-	box.add_child(UI.button("Photo mode", func():
+	box.add_child(UI.button(tr("Photo mode"), func():
 		get_parent().set_paused(false)
 		get_parent().set_photo(true), not space.navigation_locked()))
 	box.add_child(UI.button(app.library.text(4), func():

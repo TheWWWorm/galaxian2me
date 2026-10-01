@@ -7,19 +7,20 @@ extends RefCounted
 
 const Lighting := preload("res://src/presentation/lighting.gd")
 const Backdrop := preload("res://src/presentation/backdrop.gd")
+const EngineLanguage := preload("res://src/presentation/engine_language.gd")
 
 const FPS_LIMITS := [0, 30, 60, 120, 144]
 const RENDER_SCALES := [0.5, 0.67, 0.75, 0.85, 1.0]
 const MSAA := [Viewport.MSAA_DISABLED, Viewport.MSAA_2X, Viewport.MSAA_4X, Viewport.MSAA_8X]
-const MSAA_NAMES := ["Off", "2×", "4×", "8×"]
+static func msaa_names() -> Array: return [EngineLanguage.translate("Off"), "2×", "4×", "8×"]
 ## Picture shapes: Auto fills the window, the others letterbox it.
 const ASPECTS := [0.0, 4.0 / 3.0, 16.0 / 9.0, 16.0 / 10.0, 21.0 / 9.0]
-const ASPECT_NAMES := ["Auto", "4:3", "16:9", "16:10", "21:9"]
+static func aspect_names() -> Array: return [EngineLanguage.translate("Auto"), "4:3", "16:9", "16:10", "21:9"]
 ## The original's field of view: 750 of 4096 turn units, slightly narrowed.
 const CLASSIC_FOV := 750.0 / 4096.0 * 360.0 * 0.9
 ## Graphics presets: each sets the graphics options below at once. The menu
 ## shows Custom when the current values match none of them.
-const PRESET_NAMES := ["Performance", "Balanced", "Quality"]
+static func preset_names() -> Array: return [EngineLanguage.translate("Performance"), EngineLanguage.translate("Balanced"), EngineLanguage.translate("Quality")]
 const PRESETS := [
 	{"render_scale": 0.67, "msaa": 0, "enhanced_lighting": false, "glare": false, "dust": false, "lens_flare": false},
 	{"render_scale": 1.0, "msaa": 1, "enhanced_lighting": false, "glare": false, "dust": true, "lens_flare": true},
@@ -32,10 +33,11 @@ const PRESET_FALLBACKS := {"render_scale": 1.0, "msaa": 1, "enhanced_lighting": 
 ## Keyboard actions players can rebind, in the order the menu lists them.
 const BINDABLE := ["steer_up", "steer_down", "steer_left", "steer_right", "throttle_up", "throttle_down", "fire", "secondary",
 	"boost", "autopilot", "autopilot_menu", "next_target", "auto_fire", "rear_view", "action_menu", "map", "cloak", "time_warp", "photo"]
-const ACTION_NAMES := {"steer_up": "Pitch up", "steer_down": "Pitch down", "steer_left": "Turn left",
-	"steer_right": "Turn right", "throttle_up": "Thrust up", "throttle_down": "Thrust down", "fire": "Fire / use", "secondary": "Secondary weapon", "boost": "Booster",
-	"autopilot": "Autopilot", "autopilot_menu": "Autopilot list", "next_target": "Next target", "auto_fire": "Auto fire",
-	"rear_view": "Rear view", "action_menu": "Actions / jump drive", "map": "Route map", "cloak": "Cloaking device", "time_warp": "Time speed", "photo": "Photo mode"}
+static func action_name(action: String) -> String:
+	return {"steer_up": EngineLanguage.translate("Pitch up"), "steer_down": EngineLanguage.translate("Pitch down"), "steer_left": EngineLanguage.translate("Turn left"),
+		"steer_right": EngineLanguage.translate("Turn right"), "throttle_up": EngineLanguage.translate("Thrust up"), "throttle_down": EngineLanguage.translate("Thrust down"), "fire": EngineLanguage.translate("Fire / use"), "secondary": EngineLanguage.translate("Secondary weapon"), "boost": EngineLanguage.translate("Booster"),
+		"autopilot": EngineLanguage.translate("Autopilot"), "autopilot_menu": EngineLanguage.translate("Autopilot list"), "next_target": EngineLanguage.translate("Next target"), "auto_fire": EngineLanguage.translate("Auto fire"),
+		"rear_view": EngineLanguage.translate("Rear view"), "action_menu": EngineLanguage.translate("Actions / jump drive"), "map": EngineLanguage.translate("Route map"), "cloak": EngineLanguage.translate("Cloaking device"), "time_warp": EngineLanguage.translate("Time speed"), "photo": EngineLanguage.translate("Photo mode")}.get(action, action)
 
 ## Colour sets for standing. The accessible set avoids red/green pairs and
 ## keeps enemy and friend apart by brightness as well as hue.
@@ -129,7 +131,7 @@ static func apply_display(app) -> void:
 ## installed phone or tablet app turns its own screen; a browser tab cannot.
 ## Auto follows the sensor through every direction, so a phone clamped upside
 ## down in a controller still shows the picture the right way up.
-const ORIENTATIONS := ["Auto", "Landscape", "Portrait"]
+static func orientation_names() -> Array: return [EngineLanguage.translate("Auto"), EngineLanguage.translate("Landscape"), EngineLanguage.translate("Portrait")]
 static func orientation_available() -> bool:
 	return OS.has_feature("mobile") and not OS.has_feature("web")
 

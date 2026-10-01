@@ -11,6 +11,8 @@ func _ready() -> void:
 	# Checks never read a player's real replacement art.
 	preload("res://src/content/mods.gd").only_root = "res://tests/no-mods"
 	benchmark_allowed = false
+	# Checks read the engine's English text, whatever the system language.
+	EngineLanguage.apply("en")
 	set_ui_theme(UI.make_theme())
 	add_child(world_root)
 	ui_layer.layer = 10

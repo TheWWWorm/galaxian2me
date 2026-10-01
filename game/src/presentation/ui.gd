@@ -20,6 +20,7 @@ const TEXT_DIM := Color8(0x8f, 0xa7, 0xbb)
 const TEXT_GOOD := Color8(0x7f, 0xd6, 0x7a)
 const TEXT_WARN := Color8(0xff, 0x6a, 0x55)
 const HIGHLIGHT := Color8(0x3f, 0x86, 0xc2)
+const EngineLanguage := preload("res://src/presentation/engine_language.gd")
 
 static var library = null
 static var scale := 2.0
@@ -46,6 +47,9 @@ static func make_theme(text_size := 16) -> Theme:
 	font.font_names = PackedStringArray(["Noto Sans", "DejaVu Sans", "Liberation Sans", "Arial", "sans-serif"])
 	font.antialiasing = TextServer.FONT_ANTIALIASING_GRAY
 	font.hinting = TextServer.HINTING_LIGHT
+	# Chinese, Japanese and Korean engine text where the system has no such
+	# font, as in a browser.
+	font.fallbacks = EngineLanguage.fallback_fonts()
 	t.default_font = font
 	t.default_font_size = text_size
 	for type in ["Label", "Button", "LineEdit", "RichTextLabel", "CheckBox", "OptionButton", "ItemList", "TabBar", "TabContainer"]:
@@ -493,8 +497,8 @@ class Question extends Control:
 		row.alignment = BoxContainer.ALIGNMENT_CENTER
 		row.add_theme_constant_override("separation", 12)
 		box.add_child(row)
-		var yes_button: Button = kit.button(kit.library.text(38) if kit.library != null else "Yes", _answer.bind(true))
-		no_button = kit.button(kit.library.text(39) if kit.library != null else "No", _answer.bind(false))
+		var yes_button: Button = kit.button(kit.library.text(38) if kit.library != null else EngineLanguage.translate("Yes"), _answer.bind(true))
+		no_button = kit.button(kit.library.text(39) if kit.library != null else EngineLanguage.translate("No"), _answer.bind(false))
 		for b in [yes_button, no_button]:
 			b.custom_minimum_size = Vector2(140, 44)
 			b.alignment = HORIZONTAL_ALIGNMENT_CENTER

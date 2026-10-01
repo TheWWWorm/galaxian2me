@@ -14,7 +14,9 @@ const GROUP := "gof_lights"
 const SUN_GROUP := "gof_sun"
 const SOURCE_GROUP := "gof_sources"
 const ENV_GROUP := "gof_environments"
-const SOURCE_NAMES := ["Off", "Few", "Many"]
+const EngineLanguage := preload("res://src/presentation/engine_language.gd")
+static func source_names() -> Array:
+	return [EngineLanguage.translate("Off"), EngineLanguage.translate("Few"), EngineLanguage.translate("Many")]
 
 static var enhanced := false
 static var shadows := true

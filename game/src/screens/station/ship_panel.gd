@@ -59,7 +59,7 @@ func _fill() -> void:
 			slots_list.add_child(Common.row(icon, text, "", _select.bind(c, i), c == sel_cat and i == sel_slot))
 	var st: Dictionary = game.session.ship_stats()
 	slots_list.add_child(HSeparator.new())
-	var facts := [[60, "%d / %d" % [int(game.session.ship.hull), int(st.max_hull)]], [61, "%d / %d t" % [game.session.cargo_used(), int(st.cargo_capacity)]],
+	var facts := [[60, "%d / %d" % [int(game.session.ship.hull), int(st.max_hull)]], [61, tr("%d / %d t") % [game.session.cargo_used(), int(st.cargo_capacity)]],
 		[59, "%.2f" % float(st.handling)], [50, str(st.damage)]]
 	if int(st.shield) > 0: facts.append([107, str(st.shield)])
 	for f in facts:
@@ -80,7 +80,7 @@ func _detail() -> void:
 	Common.refocus(detail, keep_detail)
 	if sel_cat < 0:
 		# The original's help here names phone keys; this says what to do here.
-		detail.add_child(UI.paragraph("This is your ship with all its weapons and equipment. Pick a slot to see what is fitted there, fit an item from your hold, or remove or sell what is fitted.", 14, UI.TEXT_DIM))
+		detail.add_child(UI.paragraph(tr("This is your ship with all its weapons and equipment. Pick a slot to see what is fitted there, fit an item from your hold, or remove or sell what is fitted."), 14, UI.TEXT_DIM))
 		return
 	var cat = app.catalogue
 	var slots: Array = game.session.equipment[sel_cat]

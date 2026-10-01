@@ -5,12 +5,14 @@ extends Control
 
 const UI := preload("res://src/presentation/ui.gd")
 const DEAD_ZONE := 0.12
-const LABELS := {
-	"next_target": "Target", "autopilot": "Autopilot",
-	"rear_view": "Rear view", "secondary": "Secondary", "boost": "Boost",
-	"fire": "Fire / use", "pause": "Pause", "radio": "Next radio",
-	"action_menu": "Actions",
-}
+const LABELS := ["next_target", "autopilot", "rear_view", "secondary", "boost", "fire", "pause", "radio", "action_menu"]
+
+## A button's caption in the engine language.
+func label_for(action: String) -> String:
+	return {"next_target": tr("Target"), "autopilot": tr("Autopilot"),
+		"rear_view": tr("Rear view"), "secondary": tr("Secondary"), "boost": tr("Boost"),
+		"fire": tr("Fire / use"), "pause": tr("Pause"), "radio": tr("Next radio"),
+		"action_menu": tr("Actions")}.get(action, "")
 
 signal pause_requested
 signal radio_requested
@@ -201,19 +203,19 @@ func _hit(action: String, pos: Vector2) -> bool:
 func _load_offsets() -> void:
 	offsets.clear()
 	if app == null: return
-	for key in LABELS.keys() + ["time_warp", "stick"]:
+	for key in LABELS + ["time_warp", "stick"]:
 		# A null fallback would make the settings file report a missing key.
 		var v = app.setting("touch_layout", key, false)
 		if v is Vector2: offsets[key] = v
 	sizes.clear()
-	for key in LABELS.keys() + ["time_warp", "stick"]:
+	for key in LABELS + ["time_warp", "stick"]:
 		var s = app.setting("touch_size", key, 1.0)
 		if (s is float or s is int) and not is_equal_approx(float(s), 1.0): sizes[key] = clampf(float(s), MIN_SIZE, MAX_SIZE)
 
 ## Saves the edited placement.
 func save_offsets() -> void:
 	if app == null: return
-	for key in LABELS.keys() + ["time_warp", "stick"]:
+	for key in LABELS + ["time_warp", "stick"]:
 		app.set_setting("touch_layout", key, offsets.get(key, Vector2.ZERO))
 		app.set_setting("touch_size", key, float(sizes.get(key, 1.0)))
 
@@ -243,9 +245,9 @@ func resize_selected(step: float) -> void:
 
 ## What a control is called in the editor.
 func control_name(key: String) -> String:
-	if key == "stick": return "Steer / drill"
-	if key == "time_warp": return "Faster"
-	return str(LABELS.get(key, key))
+	if key == "stick": return tr("Steer / drill")
+	if key == "time_warp": return tr("Faster")
+	return label_for(key) if key in LABELS else key
 
 func selected_size() -> float:
 	return float(sizes.get(selected, 1.0))
@@ -467,7 +469,7 @@ func _draw() -> void:
 		var rect: Rect2 = buttons[action]
 		var held: bool = fingers.values().has(action) or (editing and (_drag == action or selected == action))
 		if action in PILLS:
-			var caption: String = LABELS.get(action, "")
+			var caption: String = label_for(action)
 			if action == "radio" and not radio_label.is_empty() and not editing: caption = radio_label
 			_pill(rect, held)
 			draw_string(font, rect.position + Vector2(0, rect.size.y / 2.0 + 6), caption, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, int(clampf(rect.size.y * 0.3, 12, 18)), UI.TEXT)
@@ -536,7 +538,7 @@ func _draw_fire(font: Font, rect: Rect2, held: bool) -> void:
 	draw_arc(c, face - 1.5, PI * 0.85, PI * 1.65, 40, Color(0.7, 0.88, 1.0, 0.55), 3.0, true)
 	draw_arc(c, face - 1.5, -PI * 0.15, PI * 0.65, 40, Color(0, 0, 0, 0.35), 3.0, true)
 	draw_arc(c, face, 0, TAU, 80, UI.ACCENT.lerp(UI.TEXT_GOOD, pulse) if auto or use else Color(UI.ACCENT, 0.5), 2.0 if not auto else 3.0, true)
-	var word := use_label if use else ("AUTO" if auto else "")
+	var word := use_label if use else (tr("AUTO") if auto else "")
 	if not word.is_empty():
 		draw_string(font, c + Vector2(-face, 6), word, HORIZONTAL_ALIGNMENT_CENTER, face * 2.0, int(clampf(r * 0.3, 12, 20)), INK_LIT)
 

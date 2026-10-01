@@ -471,7 +471,7 @@ func _show_medals() -> void:
 		head.add_child(UI.picture(sheet, 3.0, Rect2(int(entry[1]) * 31, 0, 31, 15)))
 	var names := VBoxContainer.new()
 	names.add_child(UI.label(Medals.name(app.library, int(entry[0])), 18))
-	names.add_child(UI.label(["", "Gold", "Silver", "Bronze"][clampi(int(entry[1]), 0, 3)], 14, UI.TEXT_DIM))
+	names.add_child(UI.label(["", tr("Gold"), tr("Silver"), tr("Bronze")][clampi(int(entry[1]), 0, 3)], 14, UI.TEXT_DIM))
 	head.add_child(names)
 	box.add_child(head)
 	box.add_child(UI.paragraph(Medals.description(app.library, int(entry[0]), int(entry[1])), 15))

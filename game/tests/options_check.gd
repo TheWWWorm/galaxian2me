@@ -37,7 +37,7 @@ func run() -> void:
 		for p in picks:
 			var row: Node = p.get_parent()
 			if row.get_child(0) is Label and (row.get_child(0) as Label).text == "Preset": preset_pick = p
-		check(preset_pick != null and preset_pick.selected == Prefs.PRESET_NAMES.size(), "the preset picker shows Custom")
+		check(preset_pick != null and preset_pick.selected == Prefs.preset_names().size(), "the preset picker shows Custom")
 		if preset_pick != null:
 			preset_pick.item_selected.emit(1)
 			await process_frame

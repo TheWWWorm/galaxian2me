@@ -6,6 +6,7 @@ extends "res://src/presentation/ui.gd".Frame
 const UI := preload("res://src/presentation/ui.gd")
 const Prefs := preload("res://src/presentation/preferences.gd")
 const Tips := preload("res://src/presentation/tips.gd")
+const EngineLanguage := preload("res://src/presentation/engine_language.gd")
 
 const HELP_TITLES := [112, 296, 275, 79, 130, 218, 72, 146, 297, 63, 298]
 const HELP_TEXTS := [306, 307, 308, 309, 312, 314, 315, 320, 321, 323, 324]
@@ -64,14 +65,14 @@ static func pages(app) -> Array:
 	for id in TIPS:
 		var t: String = lib.text(id)
 		if not t.is_empty() and not tips.has(t): tips.append("• " + t)
-	out.append(["Tips", "\n\n".join(tips)])
+	out.append([EngineLanguage.translate("Tips"), "\n\n".join(tips)])
 	var keys: Array = []
-	for action in Prefs.BINDABLE: keys.append("%s  —  %s" % [Prefs.ACTION_NAMES[action], Prefs.key_name(action)])
-	keys.append("Mouse: steer by pointing, left button fires, right button launches the secondary weapon; hold Alt to look around.")
-	keys.append("Gamepad: left stick steers, right stick looks around, RT/RB fire, LB secondary, A boost, Y autopilot, X next target, Back actions, Start pause.")
-	keys.append("The texts above name the phone's keys; the keys here are shown in Options → Controls.")
+	for action in Prefs.BINDABLE: keys.append("%s  —  %s" % [Prefs.action_name(action), Prefs.key_name(action)])
+	keys.append(EngineLanguage.translate("Mouse: steer by pointing, left button fires, right button launches the secondary weapon; hold Alt to look around."))
+	keys.append(EngineLanguage.translate("Gamepad: left stick steers, right stick looks around, RT/RB fire, LB secondary, A boost, Y autopilot, X next target, Back actions, Start pause."))
+	keys.append(EngineLanguage.translate("The texts above name the phone's keys; the keys here are shown in Options → Controls."))
 	out.append([lib.text(20), "\n".join(keys)])
-	out.append(["Phone keys", phone_keys(app)])
+	out.append([EngineLanguage.translate("Phone keys"), phone_keys(app)])
 	return out
 
 ## The phone's keys the game's own texts speak of, and what does their
@@ -79,16 +80,16 @@ static func pages(app) -> Array:
 static func phone_keys(app) -> String:
 	var k := func(action: String) -> String: return Prefs.key_name(action)
 	var rows := [
-		["2, 4, 6, 8 / directional keys", "%s, %s, %s, %s · mouse · left stick" % [k.call("steer_up"), k.call("steer_left"), k.call("steer_down"), k.call("steer_right")]],
-		["5 / Fire / Select", "%s · left mouse button · RT" % k.call("fire")],
-		["'Left' and 'Right' in menus", "arrow keys · D-pad"],
-		["9: autopilot", "%s · Y" % k.call("autopilot")],
-		["Hold 9: autopilot list", "%s" % k.call("autopilot_menu")],
-		["7: auto fire", "%s" % k.call("auto_fire")],
-		["3: booster", "%s · A" % k.call("boost")],
-		["0: rear view / turret", "%s · right stick click" % k.call("rear_view")],
-		["Right softkey: action menu", "%s · Back" % k.call("action_menu")],
-		["Left softkey: menu / back", "Escape · Start / B"],
+		[EngineLanguage.translate("2, 4, 6, 8 / directional keys"), EngineLanguage.translate("%s, %s, %s, %s · mouse · left stick") % [k.call("steer_up"), k.call("steer_left"), k.call("steer_down"), k.call("steer_right")]],
+		[EngineLanguage.translate("5 / Fire / Select"), EngineLanguage.translate("%s · left mouse button · RT") % k.call("fire")],
+		[EngineLanguage.translate("'Left' and 'Right' in menus"), EngineLanguage.translate("arrow keys · D-pad")],
+		[EngineLanguage.translate("9: autopilot"), EngineLanguage.translate("%s · Y") % k.call("autopilot")],
+		[EngineLanguage.translate("Hold 9: autopilot list"), "%s" % k.call("autopilot_menu")],
+		[EngineLanguage.translate("7: auto fire"), "%s" % k.call("auto_fire")],
+		[EngineLanguage.translate("3: booster"), EngineLanguage.translate("%s · A") % k.call("boost")],
+		[EngineLanguage.translate("0: rear view / turret"), EngineLanguage.translate("%s · right stick click") % k.call("rear_view")],
+		[EngineLanguage.translate("Right softkey: action menu"), EngineLanguage.translate("%s · Back") % k.call("action_menu")],
+		[EngineLanguage.translate("Left softkey: menu / back"), EngineLanguage.translate("Escape · Start / B")],
 	]
 	var lines: Array = []
 	var original: String = app.library.text(22)
@@ -110,24 +111,24 @@ static func key_note(app, text: String) -> String:
 	var parts: Array = []
 	if text.contains("directional keys") or text.contains("2, 4, 6 and 8"):
 		var four := "%s %s %s %s" % [k.call("steer_up"), k.call("steer_left"), k.call("steer_down"), k.call("steer_right")]
-		if four == "Up Left Down Right": four = "arrow keys"
-		parts.append("steer: the stick" if touch else "steer: %s · mouse · left stick" % four)
+		if four == "Up Left Down Right": four = EngineLanguage.translate("arrow keys")
+		parts.append(EngineLanguage.translate("steer: the stick") if touch else EngineLanguage.translate("steer: %s · mouse · left stick") % four)
 	if quoted.call("Fire") or quoted.call("5"):
-		parts.append("'Fire': Fire / use, or tap" if touch else "'Fire': %s · left click · RT (menus: Enter · A)" % k.call("fire"))
+		parts.append(EngineLanguage.translate("'Fire': Fire / use, or tap") if touch else EngineLanguage.translate("'Fire': %s · left click · RT (menus: Enter · A)") % k.call("fire"))
 	if quoted.call("Left") or quoted.call("Right") or quoted.call("Up") or quoted.call("Down"):
-		parts.append("'Left' / 'Right': tap the tab or row" if touch else "'Left' / 'Right': click · arrow keys · D-pad")
-	if quoted.call("9"): parts.append("'9': Autopilot" if touch else "'9': %s · Y" % k.call("autopilot"))
-	if quoted.call("7"): parts.append("'7': Auto fire" if touch else "'7': %s" % k.call("auto_fire"))
-	if quoted.call("3") or text.contains("key 3"): parts.append("'3': Boost" if touch else "'3': %s · A" % k.call("boost"))
-	if quoted.call("0"): parts.append("'0': Rear view" if touch else "'0': %s" % k.call("rear_view"))
-	if quoted.call("1"): parts.append("'1': Secondary" if touch else "'1': %s" % k.call("secondary"))
+		parts.append(EngineLanguage.translate("'Left' / 'Right': tap the tab or row") if touch else EngineLanguage.translate("'Left' / 'Right': click · arrow keys · D-pad"))
+	if quoted.call("9"): parts.append(EngineLanguage.translate("'9': Autopilot") if touch else EngineLanguage.translate("'9': %s · Y") % k.call("autopilot"))
+	if quoted.call("7"): parts.append(EngineLanguage.translate("'7': Auto fire") if touch else EngineLanguage.translate("'7': %s") % k.call("auto_fire"))
+	if quoted.call("3") or text.contains("key 3"): parts.append(EngineLanguage.translate("'3': Boost") if touch else EngineLanguage.translate("'3': %s · A") % k.call("boost"))
+	if quoted.call("0"): parts.append(EngineLanguage.translate("'0': Rear view") if touch else EngineLanguage.translate("'0': %s") % k.call("rear_view"))
+	if quoted.call("1"): parts.append(EngineLanguage.translate("'1': Secondary") if touch else EngineLanguage.translate("'1': %s") % k.call("secondary"))
 	if text.contains("right softbutton") or text.contains("oftkey right"):
-		parts.append("right softbutton: Actions" if touch else "right softbutton: %s · Back" % k.call("action_menu"))
+		parts.append(EngineLanguage.translate("right softbutton: Actions") if touch else EngineLanguage.translate("right softbutton: %s · Back") % k.call("action_menu"))
 	if text.contains("left softbutton"):
-		parts.append("left softbutton: the buttons on screen" if touch else "left softbutton: the buttons on screen (click · Enter · A)")
+		parts.append(EngineLanguage.translate("left softbutton: the buttons on screen") if touch else EngineLanguage.translate("left softbutton: the buttons on screen (click · Enter · A)"))
 	if parts.is_empty(): return ""
 	# An action with no key bound keeps only its mouse and pad names.
-	return "Here — " + "; ".join(parts).replace(": — · ", ": ").replace(": —;", ":;")
+	return EngineLanguage.translate("Here — %s") % "; ".join(parts).replace(": — · ", ": ").replace(": —;", ":;")
 
 func _unhandled_input(event: InputEvent) -> void:
 	if is_visible_in_tree() and event.is_action_pressed("ui_cancel"):

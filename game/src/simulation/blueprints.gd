@@ -2,6 +2,8 @@ extends RefCounted
 ## Native recipe production. Quantities come only from the supplied catalogue.
 ## Contributions consume cargo, not credits a second time. Remote shipping is
 ## ten credits per tonne. Finished products are local cargo or wait at origin.
+
+const EngineLanguage := preload("res://src/presentation/engine_language.gd")
 const Catalogue := preload("res://src/content/catalogue.gd")
 const SHIPPING_PER_TONNE := 10
 var session
@@ -80,7 +82,7 @@ func batch_size(product: int) -> int:
 ## Quotes are observations. Game re-resolves the real price and entire order
 ## before committing, so stale controls/confirmations cannot repeat a deposit.
 func offer(product: int, ingredient: int, count: int, unit_value: int, protected: bool) -> Dictionary:
-	var invalid := {"error": "This production order is no longer available."}
+	var invalid := {"error": EngineLanguage.translate("This production order is no longer available.")}
 	if session.in_void or cat.station(session.station_id).is_empty() or count <= 0 or unit_value < 0: return invalid
 	if not session.blueprints.has(str(product)): return invalid
 	var required := recipe(cat, product)
@@ -95,7 +97,7 @@ func offer(product: int, ingredient: int, count: int, unit_value: int, protected
 	var first := int(state.get("cost", 0)) == 0
 	var remote: bool = not first and origin >= 0 and origin != session.station_id
 	var fee := SHIPPING_PER_TONNE * count if remote else 0
-	if session.credits < fee: return {"error": "Not enough credits for the shipment."}
+	if session.credits < fee: return {"error": EngineLanguage.translate("Not enough credits for the shipment.")}
 	return {"error": "", "product": product, "ingredient": ingredient, "count": count,
 		"unit_value": unit_value, "fee": fee, "first": first, "remote": remote,
 		"station": session.station_id, "origin": origin, "carried": carried,
