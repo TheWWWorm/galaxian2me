@@ -16,6 +16,7 @@ const EngineLanguage := preload("res://src/presentation/engine_language.gd")
 const ImportScreen := preload("res://src/screens/import_screen.gd")
 const TitleScreen := preload("res://src/screens/title_screen.gd")
 const StationScreen := preload("res://src/screens/station_screen.gd")
+const LandingScreen := preload("res://src/screens/landing_screen.gd")
 const FlightScreen := preload("res://src/screens/flight_screen.gd")
 
 const AUTOSAVE_SLOT := -1
@@ -271,6 +272,21 @@ func show_flight() -> void:
 	var s := FlightScreen.new()
 	s.app = self
 	_swap(s)
+
+## Only the completed physical docking event enters this presentation.
+## Loading, Continue and scripted station transfers open the station directly.
+func show_docked_station() -> void:
+	if bool(setting("interface", "landing_sequence", true)):
+		if LandingScreen.supported(self):
+			var s := LandingScreen.new()
+			s.app = self
+			_swap(s)
+			return
+		show_station()
+		if screen is StationScreen:
+			screen.notify(tr("Station-entry animation is unavailable for this JAR."))
+	else:
+		show_station()
 
 func _on_files_dropped(files: PackedStringArray) -> void:
 	if screen != null and screen.has_method("import_file") and files.size() > 0:

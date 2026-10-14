@@ -397,6 +397,10 @@ func _sync_tractor() -> void:
 ## reads from every side.
 const TRAIL_STEP_MS := 200
 const TRAIL_WIDTH := 60.0
+## Native alpha-inspired player ribbon: a roughly three-second wake, with
+## closer samples for turns seen from the chase camera.
+const PLAYER_TRAIL_STEP_MS := 50
+const PLAYER_TRAIL_POINTS := 64
 ## Trails fade out close to the camera (world units), so a wingman's
 ## ribbon never sweeps across the view as a solid band.
 const TRAIL_FADE_NEAR := 500.0
@@ -407,6 +411,10 @@ const TRAIL_REGIONS := [Rect2i(80, 224, 16, 32), Rect2i(32, 228, 32, 13)]
 var trails := {}
 var trail_mesh: MeshInstance3D
 var trail_materials: Array = []
+var player_trail_ship: Node3D
+var player_trail_emitter: Node3D
+var player_trail_notice := false
+var player_trail_texture := false
 
 func _trail_materials() -> Array:
 	var tex: Texture2D = library.atlas_texture("space")
@@ -422,6 +430,7 @@ func _trail_materials() -> Array:
 		mat.vertex_color_use_as_albedo = true
 		var region: Rect2i = TRAIL_REGIONS[kind]
 		if img != null and Rect2i(Vector2i.ZERO, img.get_size()).encloses(region):
+			if kind == 0: player_trail_texture = true
 			var part := img.get_region(region)
 			part.convert(Image.FORMAT_RGBA8)
 			# Additive: let transparent texels add nothing.
@@ -435,10 +444,38 @@ func _trail_materials() -> Array:
 		out.append(mat)
 	return out
 
-## Other ships only: the player's own trail would run back through the
-## chase camera.
+## The player ribbon starts at a supplied booster attachment, not the hull
+## centre. Pick the most central actual engine; lights also live in Boosters.
+## The displayed transform includes the hull's bank and interpolated pose.
+func _player_emitter() -> Node3D:
+	var ship: Node3D = nodes.get(space.player)
+	if not is_instance_valid(ship): return null
+	if not is_instance_valid(player_trail_ship) or ship != player_trail_ship:
+		player_trail_ship = ship
+		player_trail_emitter = null
+		player_trail_notice = false
+		trails.erase(space.player)
+		var boosters := ship.get_node_or_null("Boosters")
+		var nearest := INF
+		if boosters != null:
+			for node in boosters.get_children():
+				if not node is MeshInstance3D or node.mesh == null or not node.has_meta("rest_scale"): continue
+				var distance: float = Vector2(node.position.x, node.position.y).length_squared()
+				if distance < nearest:
+					nearest = distance
+					player_trail_emitter = node
+	if not is_instance_valid(player_trail_emitter) or not player_trail_texture:
+		if not player_trail_notice:
+			player_trail_notice = true
+			space.event.emit("message", {"text": tr("Player engine trail is unavailable for this ship.")})
+		return null
+	return player_trail_emitter
+
 func _trailed(b: Body) -> bool:
-	return b != space.player and b.kind == Body.Kind.SHIP and b.alive and b.visible and b.ship_index >= 0 and not b.disabled
+	if not b.alive or not b.visible or b.ship_index < 0 or b.disabled: return false
+	if b == space.player:
+		return bool(app.setting("graphics", "player_trail", true)) and b.exhaust and space.mining == null and space.cloak_coef <= 0.0 and _player_emitter() != null
+	return b.kind == Body.Kind.SHIP
 
 func _sync_trails() -> void:
 	if trail_materials.is_empty(): trail_materials = _trail_materials()
@@ -453,16 +490,20 @@ func _sync_trails() -> void:
 	for b in space.bodies:
 		if not _trailed(b): continue
 		live[b] = true
+		var player: bool = b == space.player
+		var head: Vector3 = player_trail_emitter.global_position / UNIT if player else b.pos
 		var t: Dictionary = trails.get(b, {})
-		var length := 13 if b.faction == 8 or b.faction == 9 else 16
-		if t.is_empty() or (t.points as Array).is_empty() or b.pos.distance_to(t.points[0]) > 20000.0:
+		var length := PLAYER_TRAIL_POINTS if player else (13 if b.faction == 8 or b.faction == 9 else 16)
+		var step := PLAYER_TRAIL_STEP_MS if player else TRAIL_STEP_MS
+		if t.is_empty() or (t.points as Array).is_empty() or head.distance_to(t.points[0]) > 20000.0 or clock < int(t.at):
 			# New, or moved by a jump: start again where it is.
-			t = {"points": [b.pos], "at": clock, "kind": 1 if length == 13 else 0}
+			t = {"points": [head], "at": clock, "kind": 1 if length == 13 else 0}
 			trails[b] = t
-		elif clock - int(t.at) >= TRAIL_STEP_MS:
+		elif clock - int(t.at) >= step:
 			t.at = clock
-			(t.points as Array).push_front(b.pos)
+			(t.points as Array).push_front(head)
 			while (t.points as Array).size() > length: (t.points as Array).pop_back()
+		t.head = head
 	for b in trails.keys():
 		if not live.has(b): trails.erase(b)
 	var mesh: ImmediateMesh = trail_mesh.mesh
@@ -474,10 +515,12 @@ func _sync_trails() -> void:
 		for b in trails:
 			var t: Dictionary = trails[b]
 			if int(t.kind) != kind: continue
-			# The newest point follows the ship; the rest are the samples.
-			var pts: Array = [b.pos] + (t.points as Array).slice(1)
+			var player: bool = b == space.player
+			# Keep the player's latest sample behind a live head so a turn
+			# cannot stretch a single segment over two sample intervals.
+			var pts: Array = [t.head] + (t.points as Array).slice(0 if player else 1)
 			if pts.size() < 2: continue
-			var length := 13 if kind == 1 else 16
+			var length := PLAYER_TRAIL_POINTS if player else (13 if kind == 1 else 16)
 			if not begun:
 				mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES, trail_materials[kind])
 				begun = true
@@ -490,7 +533,8 @@ func _sync_trails() -> void:
 				# quads of a still trail have no area. Full width only once the
 				# samples are a trail's width apart, so waiting or bobbing ships
 				# never draw squares.
-				var reach := clampf(along.length() / (TRAIL_WIDTH * UNIT * 4.0), 0.0, 1.0)
+				var spacing := float(PLAYER_TRAIL_STEP_MS) / TRAIL_STEP_MS if player else 1.0
+				var reach := clampf(along.length() / (TRAIL_WIDTH * UNIT * 4.0 * spacing), 0.0, 1.0)
 				side = side.normalized() * TRAIL_WIDTH * UNIT * reach if side.length_squared() > 0.0000001 else Vector3.ZERO
 				# v runs from the ship's end (the region's bottom) back.
 				var near := clampf((p.distance_to(eye) / UNIT - TRAIL_FADE_NEAR) / (TRAIL_FADE_FULL - TRAIL_FADE_NEAR), 0.0, 1.0)

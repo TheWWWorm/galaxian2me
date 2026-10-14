@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.0
+
+- Player engine trail (Options → Graphics, on by default): a blue-white ribbon inspired by the alpha footage, using the supplied space texture and a booster attachment from the ship's parts. It follows turns and banking, fades near the camera and clears when cloaking, mining, hiding the engines or moving to another world. NPC trails keep their existing appearance. Ships without a supplied booster or trail texture report the effect as unavailable.
+- Station-entry animation (Options → Interface, on by default): a skippable ten-second approach into the supplied hangar after completed physical docking. A key, left click, tap, controller button or the Skip button opens the station immediately. Rewards, repairs and the docking autosave finish before the animation; completing or skipping it never repeats them. Loading a docked save and scripted station transfers open the station directly.
+- Entry uses the landing camera keyframes recovered structurally from the player's JAR, including their YXZ rotation order. The ship approach, camera alignment with the native hangar and station transition are native choreography; the release's unused landing scene is not executed. Missing or malformed camera data disables the sequence with a notice. The parked hangar and entry share the same lighting.
+- Both settings and their notices are translated into all fourteen supported non-English interface languages; Chinese, Japanese and Korean font subsets include the new text.
+
 ## 0.1.5
 
 - Engine text (menus, settings, notices, help and HUD labels the engine adds; 426 texts) is translated into Russian, Ukrainian, German, French, Spanish, Brazilian Portuguese, Italian, Polish, Turkish, Indonesian, Vietnamese, Simplified Chinese, Japanese and Korean. Text is marked with `tr()` and looked up in `game/src/locale/<code>.gd`; `tools/engine_text.py check` compares the catalogs with the code. The game's own text is unchanged and still comes from the JAR; automatic control translation is off, so JAR text is never replaced by a catalog entry.

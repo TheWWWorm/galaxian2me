@@ -15,6 +15,21 @@ var angle := 1536.0
 var spin := 0.0
 var library
 
+## Shared by the parked view and the entry sequence so the same room and
+## hull retain their lighting when the station menus open.
+static func light_scene(scene: Node3D) -> WorldEnvironment:
+	var env := WorldEnvironment.new()
+	env.environment = Environment.new()
+	env.environment.background_mode = Environment.BG_COLOR
+	env.environment.background_color = Color(0.02, 0.025, 0.03)
+	scene.add_child(env)
+	# A low key light keeps the walls bright without washing out the pad's
+	# additive rings. Metal reflects a dim room with a warm floor.
+	Lighting.environment(env, Color(0.2, 0.206, 0.224), Color(0.5, 0.5, 0.52), Color(0.36, 0.34, 0.31), Color(0.45, 0.28, 0.08))
+	Lighting.key_light(scene, -Vector3(0.7, 0.25, 0.65), Color(1.0, 0.96, 0.9), 0.5, 120.0).shadow_opacity = 0.6
+	Lighting.fill_light(scene, Vector3(0.6, -0.15, 0.8), Color(0.85, 0.9, 1.0), 0.35)
+	return env
+
 func setup(lib, station_id: int, faction: int, ship_index: int, ship_faction: int) -> void:
 	library = lib
 	var style := 2 if faction == 1 else (0 if faction == 0 else 1)

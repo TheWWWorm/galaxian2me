@@ -229,6 +229,8 @@ func _display_page() -> void:
 	_note(tr("The original's view is about %d°.") % int(round(Prefs.CLASSIC_FOV)))
 	_toggle(tr("Space dust"), "graphics", "dust", true, sync)
 	_toggle(tr("Lens flare"), "graphics", "lens_flare", true, sync)
+	_toggle(tr("Player engine trail"), "graphics", "player_trail", true)
+	_note(tr("An alpha-inspired light trail behind your ship."))
 	_toggle(tr("Sharp stars"), "graphics", "sharp_stars", true, func(_on): Prefs.apply_display(app))
 	_note(tr("Draws the starfield's stars as points at the screen's own resolution; off shows the original's star pictures."))
 	_toggle(tr("Smooth ship textures"), "display", "smooth_textures", false, func(_on):
@@ -346,6 +348,8 @@ func _interface_page() -> void:
 		_build()))
 	_toggle(tr("Launch sequence"), "interface", "launch_sequence", true)
 	_note(tr("As in the original, each flight opens with a few seconds watching your ship leave, with the system's details and a tip. A key, click or tap skips it."))
+	_toggle(tr("Station-entry animation"), "interface", "landing_sequence", true)
+	_note(tr("Watch your ship enter the hangar after docking. A key, click or tap skips it."))
 	_toggle(tr("Radar scope"), "interface", "radar_scope", true)
 	_note(tr("A round radar on the Extended flight display. Not part of the original, which marks ships only on screen and at its edges."))
 	_toggle(tr("Object labels"), "interface", "labels", true)

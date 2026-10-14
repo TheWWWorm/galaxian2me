@@ -1,5 +1,5 @@
 extends RefCounted
-## A looping camera path in the original's keyframe format: eight values per
+## A camera path in the original's keyframe format: eight values per
 ## key (time in ms, position x/y/z, rotation x/y/z in 4096ths of a turn,
 ## field of view in 4096ths of a turn), interpolated with cubic Hermite
 ## segments whose end tangents are zero, like the original's path player.
@@ -9,8 +9,17 @@ const Assembly := preload("res://src/presentation/assembly.gd")
 var keys: Array = []
 var period := 1.0
 var tangents: Array = []
+var yaw_first := false
 
-func _init(flat: Array) -> void:
+func _init(flat: Array, use_yxz := false) -> void:
+	yaw_first = use_yxz
+	# A missing or malformed recovered track is unsupported, not a cue to
+	# supply an invented replacement. Title paths keep their existing XYZ turn.
+	if flat.size() < 16 or flat.size() % 8 != 0: return
+	for i in flat.size():
+		if not (flat[i] is int or flat[i] is float) or not is_finite(float(flat[i])): return
+		if i % 8 == 0 and (float(flat[i]) < 0.0 or (i > 0 and float(flat[i]) <= float(flat[i - 8]))): return
+		if i % 8 == 7 and float(flat[i]) <= 0.0: return
 	for i in range(0, flat.size() - 7, 8):
 		keys.append(flat.slice(i, i + 8))
 	if keys.size() >= 2:
@@ -25,9 +34,10 @@ func _init(flat: Array) -> void:
 func valid() -> bool:
 	return keys.size() >= 2 and period > 0.0
 
-## {transform, fov} at `ms` milliseconds into the loop.
-func sample(ms: float) -> Dictionary:
-	var t := fmod(ms, period)
+## {transform, fov} at `ms`; finite sequences clamp instead of looping.
+func sample(ms: float, looping := true) -> Dictionary:
+	if not valid(): return {}
+	var t := fposmod(ms, period) if looping else clampf(ms, 0.0, period)
 	var seg := 0
 	for i in range(keys.size() - 1, -1, -1):
 		if float(keys[i][0]) < t:
@@ -44,5 +54,8 @@ func sample(ms: float) -> Dictionary:
 		v.append(h00 * float(keys[seg][k + 1]) + h10 * tangents[seg][k] + h01 * float(keys[seg + 1][k + 1]) + h11 * tangents[seg + 1][k])
 	# Fractions of a unit kept: whole 4096ths step visibly on a slow orbit.
 	var basis := Assembly.basis(float(v[3]), float(v[4]), float(v[5]))
+	# The retained landing camera selects rotation order 2 (Ry·Rx·Rz).
+	if yaw_first:
+		basis = Basis(Vector3.UP, float(v[4]) * TAU / 4096.0) * Basis(Vector3.RIGHT, float(v[3]) * TAU / 4096.0) * Basis(Vector3.BACK, float(v[5]) * TAU / 4096.0)
 	return {"transform": Transform3D(basis, Assembly.position([v[0], v[1], v[2]])),
 		"fov": clampf(v[6] / 4096.0 * 360.0, 20.0, 120.0)}

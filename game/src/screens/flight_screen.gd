@@ -409,7 +409,7 @@ func _on_event(kind: String, data: Dictionary) -> void:
 	match kind:
 		"docked":
 			game.dock(int(data.station))
-			app.show_station()
+			app.show_docked_station()
 		"jumped":
 			game.jump_arrive(int(data.system), int(data.station))
 			app.show_flight()
