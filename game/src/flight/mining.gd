@@ -12,6 +12,11 @@ const Catalogue := preload("res://src/content/catalogue.gd")
 const WIDTHS := [44, 39, 34, 29, 23, 18, 13]
 const MARGIN := 2
 const RED_LIMIT := 2500.0
+## The phone adds the whole accumulated steer once per frame, so its pull
+## grows with the frame rate. The remake applies it per millisecond as a
+## 20 fps phone frame would; at 60 Hz the per-frame version swung the
+## drill about three times as far and threw it off the layer.
+const PHONE_FRAME_MS := 50.0
 
 var layers := 2
 var ore := 154
@@ -82,7 +87,7 @@ func step(ms: int, left: bool, right: bool) -> bool:
 	if right: steer -= ms / steer_div
 	elif left: steer += ms / steer_div
 	else: steer = 0.0
-	drill = clampf(drill + drift_speed - steer, -half_width(), half_width())
+	drill = clampf(drill + drift_speed - steer * ms / PHONE_FRAME_MS, -half_width(), half_width())
 	return true
 
 ## Whether the drill got through every layer of a class A asteroid.

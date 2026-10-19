@@ -34,6 +34,17 @@ func run() -> void:
 			outside.drill = 23.0 * sign_value
 			outside.step(16, false, false)
 			check(outside.red == 16 and outside.layer_time == 0, "next integer beyond green zone accumulates red time")
+		# Holding a direction for 300 ms moves the drill about as far at any
+		# tick rate as at a 20 fps phone frame.
+		var swings := []
+		for frame in [8, 16, 50]:
+			var held := Mining.new(7, 164, 87, app.catalogue)
+			held.drift_period = 1000000
+			held.drift_dir = 0.0
+			for i in 300 / frame: held.step(frame, false, true)
+			swings.append(held.drill)
+		check(absf(swings[0] - swings[2]) < swings[2] * 0.25 and absf(swings[1] - swings[2]) < swings[2] * 0.25,
+			"drill steering does not grow with the tick rate (%s)" % [swings])
 		var odd := Mining.new(7, 164, 87, app.catalogue)
 		odd.layer = 1
 		check(odd.half_width() == 60.0, "original odd layer outer clamp uses integer division")

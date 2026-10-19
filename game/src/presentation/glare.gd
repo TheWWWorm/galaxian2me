@@ -35,9 +35,24 @@ void fragment() {
 		vec3 hue = m.rgb / max(0.02, max(m.r, max(m.g, m.b)));
 		glow += hue * m.a * (0.55 - float(i) * 0.08);
 	}
-	vec3 picture = textureLod(screen, SCREEN_UV, 0.0).rgb;
-	// Added softly, so what is already bright is not flattened to white.
-	COLOR = vec4(picture + glow * strength * (1.0 - picture * 0.6), 1.0);
+	// How much of the wider surroundings is past the threshold. Glare is
+	// light from small bright things (the sun, flames, lamps); a brightly
+	// lit floor or hull filling much of the view would otherwise glow as
+	// a whole and wash out to white.
+	float wide = 0.0;
+	for (int x = -1; x <= 1; x++) {
+		for (int y = -1; y <= 1; y++) {
+			wide += textureLod(screen, SCREEN_UV + vec2(float(x), float(y)) * 0.15, 5.5).a;
+		}
+	}
+	wide /= 9.0;
+	vec4 here = textureLod(screen, SCREEN_UV, 0.0);
+	vec3 picture = here.rgb;
+	// It spills onto what is around a bright spot rather than piling onto
+	// the spot itself, and is added softly, so what is already bright is
+	// not flattened to white.
+	float spill = (1.0 - here.a * 0.8) / (1.0 + wide * 5.0);
+	COLOR = vec4(picture + glow * strength * spill * (1.0 - picture * 0.6), 1.0);
 }
 """
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1
+
+- Mining: the drill's steering no longer grows with the frame rate. The original adds the accumulated steer to the drill once per frame; at the engine's 60 Hz a short correction moved the drill about three times as far as on a 20 fps phone and threw it past the edge of the layer, so the asteroid broke apart. Steering is now applied per millisecond at the strength of a 20 fps phone frame. Drift, the red-zone limit and ore rates are unchanged.
+- Glare: light now spills from small bright spots (sun, flames, lamps) onto their darker surroundings and fades out when much of the view is bright. A brightly lit hangar floor no longer washes out to white (seen on Android with the High preset).
+
 ## 0.2.0
 
 - Player engine trail (Options → Graphics, on by default): a blue-white ribbon inspired by the alpha footage, using the supplied space texture and a booster attachment from the ship's parts. It follows turns and banking, fades near the camera and clears when cloaking, mining, hiding the engines or moving to another world. NPC trails keep their existing appearance. Ships without a supplied booster or trail texture report the effect as unavailable.
