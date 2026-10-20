@@ -196,6 +196,30 @@ func _run() -> void:
 	check(finger(8, point("radio")) and radios == 1, "radio navigation during locked cinematic")
 	check(not finger(9, point("fire")), "no gameplay buttons during cinematic")
 	finger(8, Vector2.ZERO, false)
+	# Mining locks flying, but the stick steers the drill and fire stops it.
+	touch.set_context(false, false, true)
+	touch.set_use("Stop")
+	for action in ["boost", "next_target", "autopilot", "secondary"]:
+		finger(12, point(action))
+		check(touch.fingers.get(12) != action, "flight buttons hide while mining: " + action)
+		finger(12, Vector2.ZERO, false)
+	check(not controls.state(null).boost, "no flight presses leak while mining")
+	check(finger(14, touch.stick_center + Vector2(-touch.stick_radius * 0.8, 0)), "stick steers the drill while mining")
+	check(controls.state(null).yaw < -0.7, "drill steering reaches the controls")
+	finger(14, Vector2.ZERO, false)
+	settings.values.auto_fire = true
+	touch.app = settings
+	finger(15, point("fire"))
+	finger(15, Vector2.ZERO, false)
+	state = controls.state(null)
+	check(state.fire_pressed and not state.auto_fire_toggled, "fire stops mining even with automatic fire on")
+	finger(16, point("fire"))
+	finger(16, Vector2.ZERO, false)
+	check(controls.state(null).fire_pressed, "a quick second tap is a second press, not auto fire")
+	settings.values.auto_fire = false
+	touch.app = null
+	touch.set_use("")
+	touch.set_context(true, false)
 	# Placement editing: drag a button and the stick, save, and a fresh
 	# overlay uses the saved places; Reset restores the layout.
 	var store := SectionStub.new()

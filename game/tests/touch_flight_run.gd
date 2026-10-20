@@ -99,6 +99,9 @@ func _run() -> void:
 	tap(flight, "pause")
 	check(flight.paused and flight.hud.pause_panel != null, "touch Pause opens the pause menu")
 	check(flight.touch.fingers.is_empty() and not flight.touch.visible, "pause releases all captured fingers")
+	# One frame first, so the reference is the drawn (blended) pose too:
+	# a paused flight must neither tick nor wobble between its last poses.
+	await frames(1)
 	var frozen_clock: int = flight.space.clock
 	var frozen_pos: Vector3 = flight.space.player.pos
 	await frames(6)
@@ -159,6 +162,10 @@ func _run() -> void:
 			touch(30, Vector2.ZERO, false)
 			await frames(2)
 			check(flight.space.mining != null and is_zero_approx(flight.space.mining.steer), "releasing stick stops drill input")
+			check(flight.touch.use_label == flight.tr("Stop"), "fire is captioned Stop while mining")
+			tap(flight, "fire")
+			await frames(2)
+			check(flight.space.mining_target == null, "touch fire stops mining")
 
 	# Re-enter the real opening and wait for an imported radio line.
 	var previous_game: WeakRef = weakref(app.game)
@@ -179,6 +186,9 @@ func _run() -> void:
 				break
 	for i in mini(4000, int(radio_budget / 16.0) + 60):
 		if flight.space.story != null and not flight.space.story.message().is_empty(): break
+		# The opening's briefing arrives five seconds in and pauses the
+		# scene; a player answers it and the radio follows.
+		if flight.conversation != null: flight.conversation.finished.emit()
 		await frames(1)
 	if flight.space.story != null and flight.space.story.message().is_empty():
 		print("Radio timeout: paused=", flight.paused, " clock=", flight.space.story.clock,

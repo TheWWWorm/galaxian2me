@@ -177,7 +177,8 @@ func _update_touch_context() -> void:
 	touch.set_fitted({"boost": int(game.session.ship_stats().get("boost_length", 0)) > 0,
 		"secondary": not space.secondary_launchers().is_empty()})
 	touch.set_context(not paused and not space.navigation_locked(),
-		not paused and not space.portal_arriving() and story != null and (not story.message().is_empty() or skip))
+		not paused and not space.portal_arriving() and story != null and (not story.message().is_empty() or skip),
+		not paused and space.mining_target != null and not (story != null and story.controls_locked))
 
 func _next_radio() -> void:
 	if not paused and not space.portal_arriving() and space.story != null:
@@ -377,7 +378,7 @@ func _process(delta: float) -> void:
 				view.photo_pitch = clampf(view.photo_pitch + stick.y * delta * 1.5, -1.45, 1.45)
 			var z := Input.get_joy_axis(pad, JOY_AXIS_TRIGGER_RIGHT) - Input.get_joy_axis(pad, JOY_AXIS_TRIGGER_LEFT)
 			if absf(z) > 0.1: view.photo_distance = clampf(view.photo_distance * (1.0 - z * delta), 900.0, 40000.0)
-	view.sync(delta)
+	view.sync(delta, paused)
 	_update_touch_context()
 	_sync_mouse_capture()
 

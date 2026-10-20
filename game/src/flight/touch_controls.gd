@@ -21,6 +21,9 @@ signal radio_requested
 var app = null
 var gameplay_enabled := true
 var radio_visible := false
+## Mining: flying is locked, but the stick steers the drill and fire stops
+## it, so those two stay (with time warp and pause) while the rest hides.
+var mining := false
 ## The time speed-up button's caption; empty hides the button.
 var warp_label := ""
 ## The radio button's caption when it skips a cinematic's wait instead.
@@ -252,12 +255,17 @@ func control_name(key: String) -> String:
 func selected_size() -> float:
 	return float(sizes.get(selected, 1.0))
 
-func set_context(gameplay: bool, radio: bool) -> void:
-	if gameplay_enabled == gameplay and radio_visible == radio: return
-	if gameplay_enabled != gameplay: reset()
+func set_context(gameplay: bool, radio: bool, drilling := false) -> void:
+	if gameplay_enabled == gameplay and radio_visible == radio and mining == drilling: return
+	if gameplay_enabled != gameplay or mining != drilling: reset()
 	gameplay_enabled = gameplay
 	radio_visible = radio
+	mining = drilling
 	queue_redraw()
+
+## Whether the stick takes a thumb: in flight, and on the drill while mining.
+func _steering() -> bool:
+	return gameplay_enabled or mining
 
 func set_fitted(map: Dictionary) -> void:
 	if map == fitted: return
@@ -295,7 +303,8 @@ func _available(action: String) -> bool:
 	if fitted.has(action) and not bool(fitted[action]): return false
 	if action == "pause": return true
 	if action == "radio": return radio_visible
-	if action == "time_warp": return gameplay_enabled and not warp_label.is_empty()
+	if action == "time_warp": return _steering() and not warp_label.is_empty()
+	if mining and not gameplay_enabled: return action == "fire"
 	return gameplay_enabled
 
 func _input(event: InputEvent) -> void:
@@ -365,11 +374,11 @@ func handle_touch(event: InputEvent) -> bool:
 			return true
 		if fingers.has(event.index): return true
 		var pos: Vector2 = get_global_transform_with_canvas().affine_inverse() * event.position
-		if gameplay_enabled and stick_id < 0 and _floating() and (anywhere() or pos.distance_to(stick_center) > stick_radius) and _in_stick_zone(pos) and not _on_button(pos):
+		if _steering() and stick_id < 0 and _floating() and (anywhere() or pos.distance_to(stick_center) > stick_radius) and _in_stick_zone(pos) and not _on_button(pos):
 			# The stick comes to the thumb wherever it lands on its side;
 			# a touch on the resting stick steers from where it is.
 			stick_center = pos
-		if gameplay_enabled and stick_id < 0 and pos.distance_to(stick_center) <= stick_radius:
+		if _steering() and stick_id < 0 and pos.distance_to(stick_center) <= stick_radius:
 			stick_id = event.index
 			fingers[event.index] = "steer"
 			_move_stick(pos)
@@ -380,10 +389,11 @@ func handle_touch(event: InputEvent) -> bool:
 			fingers[event.index] = action
 			if action == "pause": pause_requested.emit()
 			elif action == "radio": radio_requested.emit()
-			elif action == "fire" and not held_elsewhere and (_auto_fire_on() or Time.get_ticks_msec() - _last_fire_ms < DOUBLE_TAP_MS):
+			elif action == "fire" and not held_elsewhere and use_label.is_empty() and (_auto_fire_on() or Time.get_ticks_msec() - _last_fire_ms < DOUBLE_TAP_MS):
 				# Double tap: automatic fire on; a tap while it runs: off.
 				# Only separate single-finger taps count, never a second
-				# finger joining one that holds the button.
+				# finger joining one that holds the button. While fire is
+				# captioned (Dock, Mine, Stop...) every tap is that action.
 				edges["auto_fire"] = true
 				fingers[event.index] = "fire_toggle"
 				_last_fire_ms = -100000
@@ -443,7 +453,7 @@ func _move_stick(pos: Vector2) -> void:
 	queue_redraw()
 
 func sample() -> Dictionary:
-	if not is_visible_in_tree() or not gameplay_enabled:
+	if not is_visible_in_tree() or not _steering():
 		return {"yaw": 0.0, "pitch": 0.0}
 	var out := edges.duplicate()
 	out.yaw = stick.x
@@ -462,7 +472,7 @@ const INK_LIT := Color(0.9, 0.97, 1.0)
 
 func _draw() -> void:
 	var font := get_theme_default_font()
-	if gameplay_enabled and (stick_id >= 0 or not anywhere()):
+	if _steering() and (stick_id >= 0 or not anywhere()):
 		_draw_stick(font)
 	for action in buttons:
 		if not _available(action): continue

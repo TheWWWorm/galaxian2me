@@ -144,11 +144,17 @@ func _livery(b: Body) -> int:
 func _animated(model: String, frame: int) -> Node3D:
 	return Assembly.figure(library, model, frame)
 
-func sync(delta: float) -> void:
+## How far between its last two poses each body was last drawn.
+var _blend := 1.0
+
+func sync(delta: float, frozen := false) -> void:
 	# The simulation ticks at a fixed rate; the display may run faster or
 	# unevenly. Bodies are drawn (and the HUD placed) between their last two
-	# poses so motion is smooth instead of stepping.
-	space.present(Engine.get_physics_interpolation_fraction())
+	# poses so motion is smooth instead of stepping. While the flight is
+	# frozen (paused, a conversation, photo mode) the engine's fraction keeps
+	# cycling, so the blend stays where it was and nothing wobbles.
+	if not frozen: _blend = Engine.get_physics_interpolation_fraction()
+	space.present(_blend)
 	_present(delta)
 
 func _present(delta: float) -> void:

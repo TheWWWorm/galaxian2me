@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.2
+
+- Touch controls while mining: the touch overlay treated mining like any other locked manoeuvre and hid every control once the drill took the asteroid, so the drill could not be steered or stopped and always wrecked the rock. While mining, the stick now steers the drill and the fire button (captioned Stop) ends it and keeps the ore; time speed-up and Pause stay available, other flight buttons stay hidden.
+- Touch fire button: while it is captioned with an action (Dock, Fly in, Travel, Mine, Stop), every tap performs that action. Previously a tap with automatic fire on, or a quick second tap, toggled automatic fire instead.
+- Paused flight: ships no longer jitter while the game is paused, in a conversation or in photo mode. Drawing kept blending each body between its last two simulation poses with a fraction that keeps cycling while the simulation is stopped; the blend now holds where it was.
+
 ## 0.2.1
 
 - Mining: the drill's steering no longer grows with the frame rate. The original adds the accumulated steer to the drill once per frame; at the engine's 60 Hz a short correction moved the drill about three times as far as on a 20 fps phone and threw it past the edge of the layer, so the asteroid broke apart. Steering is now applied per millisecond at the strength of a 20 fps phone frame. Drift, the red-zone limit and ore rates are unchanged.
