@@ -61,7 +61,6 @@ const PAGES := {
 	"step/9": {"title": "Règlement de comptes"},
 	"world/galaxy": {"title": "La galaxie", "subtitle": "Univers", "category": "world", "from": 0},
 	"world/history": {"title": "Histoire", "subtitle": "Univers", "category": "world", "from": 0},
-	"world/khador": {"title": "Khador", "subtitle": "Personnage", "category": "characters", "from": 32},
 	"world/voids": {"title": "Les Voids", "subtitle": "Univers", "category": "world", "from": 0},
 }
 const BLOCKS := {
@@ -223,7 +222,7 @@ const BLOCKS := {
 	],
 	"faction/7": [
 		[0, "", "Les Grey sont une race sans systèmes, stations ni vaisseaux propres. Ils ne jouent aucun rôle dans le commerce ni dans les combats.", false],
-		[32, "", "Le seul Grey de l'histoire est [[character/20]], un scientifique qui travaille avec Deep Science ; voir [[world/khador]].", false],
+		[32, "", "Le seul Grey de l'histoire est [[character/20]], un scientifique qui travaille avec Deep Science.", false],
 		[33, "", "Il étudie les débris des vaisseaux voids et en tire un nouveau type de propulseur.", false],
 	],
 	"faction/8": [
@@ -1557,9 +1556,6 @@ const BLOCKS := {
 		[42, "", "Avec des renforts menés par [[character/8]], Keith escorte Errkt à travers un trou de ver. Errkt précipite le cargo sur le vaisseau-mère et meurt dans l'attaque ([[step/41]]).", false],
 		[43, "", "Tous les trous de ver s'effondrent et les raids des Voids prennent fin.", false],
 		[45, "Épilogue", "Keith fait la fête avec Brent et passe enfin une nuit avec Carla. Elle part le lendemain matin pour un autre projet secret, et Keith reste libre de parcourir la galaxie.", false],
-	],
-	"world/khador": [
-		[32, "", "Khador, un scientifique grey qui travaille pour Deep Science, a sa propre page : voir [[character/20]].", false],
 	],
 	"world/voids": [
 		[0, "", "Les [[faction/9|Voids]] sont la menace centrale de l'histoire. Cette page rassemble ce que l'on apprend à leur sujet ; d'autres éléments apparaissent à mesure que votre sauvegarde progresse.", false],

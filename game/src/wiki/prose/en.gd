@@ -61,7 +61,6 @@ const PAGES := {
 	"step/9": {"title": "Settling accounts"},
 	"world/galaxy": {"title": "The galaxy", "subtitle": "Setting", "category": "world", "from": 0},
 	"world/history": {"title": "History", "subtitle": "Setting", "category": "world", "from": 0},
-	"world/khador": {"title": "Khador", "subtitle": "Character", "category": "characters", "from": 32},
 	"world/voids": {"title": "The Voids", "subtitle": "Setting", "category": "world", "from": 0},
 }
 const BLOCKS := {
@@ -223,7 +222,7 @@ const BLOCKS := {
 	],
 	"faction/7": [
 		[0, "", "The Grey are a race without systems, stations or ships of their own. They play no part in trade or combat.", false],
-		[32, "", "The one Grey in the story is [[character/20]], a scientist working with Deep Science; see [[world/khador]].", false],
+		[32, "", "The one Grey in the story is [[character/20]], a scientist working with Deep Science.", false],
 		[33, "", "He studies the remains of Void ships and develops a new kind of drive from them.", false],
 	],
 	"faction/8": [
@@ -1557,9 +1556,6 @@ const BLOCKS := {
 		[42, "", "With reinforcements under [[character/8]], Keith escorts Errkt through a wormhole. Errkt rams the freighter into the mother ship and dies in the attack ([[step/41]]).", false],
 		[43, "", "Every wormhole collapses and the Void raids end.", false],
 		[45, "Epilogue", "Keith celebrates with Brent and finally spends a night with Carla. She leaves the next morning for another secret project, and Keith is left free to roam the galaxy.", false],
-	],
-	"world/khador": [
-		[32, "", "Khador, a Grey scientist working for Deep Science, has his own page: see [[character/20]].", false],
 	],
 	"world/voids": [
 		[0, "", "The [[faction/9|Voids]] are the central threat of the story. This page collects what is learned about them; more appears as your save advances.", false],

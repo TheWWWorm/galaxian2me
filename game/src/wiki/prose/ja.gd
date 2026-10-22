@@ -61,7 +61,6 @@ const PAGES := {
 	"step/9": {"title": "決着"},
 	"world/galaxy": {"title": "銀河", "subtitle": "設定", "category": "world", "from": 0},
 	"world/history": {"title": "歴史", "subtitle": "設定", "category": "world", "from": 0},
-	"world/khador": {"title": "Khador", "subtitle": "キャラクター", "category": "characters", "from": 32},
 	"world/voids": {"title": "ヴォイド", "subtitle": "設定", "category": "world", "from": 0},
 }
 const BLOCKS := {
@@ -223,7 +222,7 @@ const BLOCKS := {
 	],
 	"faction/7": [
 		[0, "", "Greyは、自らの星系、ステーション、船を持たない種族である。交易や戦闘には関わらない。", false],
-		[32, "", "物語に登場する唯一のGreyは、Deep Scienceとともに働く科学者[[character/20]]である。[[world/khador]]を参照。", false],
+		[32, "", "物語に登場する唯一のGreyは、Deep Scienceとともに働く科学者[[character/20]]である。", false],
 		[33, "", "彼はヴォイド艦の残骸を研究し、そこから新しい種類のドライブを開発する。", false],
 	],
 	"faction/8": [
@@ -1557,9 +1556,6 @@ const BLOCKS := {
 		[42, "", "[[character/8]]率いる増援とともに、KeithはErrktをワームホールの向こうへ護衛する。Errktは貨物船ごと母艦に突入し、この攻撃で命を落とす（[[step/41]]）。", false],
 		[43, "", "すべてのワームホールが崩壊し、ヴォイドの襲撃は終わる。", false],
 		[45, "エピローグ", "KeithはBrentと勝利を祝い、ついにCarlaと一夜を共にする。彼女は翌朝、別の秘密プロジェクトのために去り、Keithは自由に銀河を巡る身となる。", false],
-	],
-	"world/khador": [
-		[32, "", "Deep Scienceで働くGreyの科学者Khadorには専用のページがある。[[character/20]]を参照。", false],
 	],
 	"world/voids": [
 		[0, "", "[[faction/9|ヴォイド]]は物語の中心となる脅威である。このページには彼らについて判明したことをまとめており、セーブが進むにつれて内容が増える。", false],

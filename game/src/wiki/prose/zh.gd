@@ -61,7 +61,6 @@ const PAGES := {
 	"step/9": {"title": "清算"},
 	"world/galaxy": {"title": "银河", "subtitle": "背景设定", "category": "world", "from": 0},
 	"world/history": {"title": "历史", "subtitle": "背景设定", "category": "world", "from": 0},
-	"world/khador": {"title": "Khador", "subtitle": "角色", "category": "characters", "from": 32},
 	"world/voids": {"title": "Void", "subtitle": "背景设定", "category": "world", "from": 0},
 }
 const BLOCKS := {
@@ -223,7 +222,7 @@ const BLOCKS := {
 	],
 	"faction/7": [
 		[0, "", "Grey 是一个没有自己的星系、空间站或飞船的种族。他们不参与贸易或战斗。", false],
-		[32, "", "剧情中唯一的 Grey 是 [[character/20]]，一位与 Deep Science 合作的科学家；见 [[world/khador]]。", false],
+		[32, "", "剧情中唯一的 Grey 是 [[character/20]]，一位与 Deep Science 合作的科学家。", false],
 		[33, "", "他研究 Void 飞船的残骸，并据此研制出一种新型引擎。", false],
 	],
 	"faction/8": [
@@ -1557,9 +1556,6 @@ const BLOCKS := {
 		[42, "", "在 [[character/8]] 率领的援军支持下，Keith 护送 Errkt 穿过虫洞。Errkt 驾驶货船撞向母舰，在这次攻击中牺牲（[[step/41]]）。", false],
 		[43, "", "所有虫洞随之坍塌，Void 的袭击就此终结。", false],
 		[45, "尾声", "Keith 与 Brent 一同庆祝，终于和 Carla 共度了一夜。第二天早上她便离开，去参加另一个秘密项目，而 Keith 则可以自由地遨游银河。", false],
-	],
-	"world/khador": [
-		[32, "", "Khador 是一位为 Deep Science 工作的 Grey 科学家，他有自己的专页：见 [[character/20]]。", false],
 	],
 	"world/voids": [
 		[0, "", "[[faction/9|Void]] 是剧情中的核心威胁。本页汇集了关于他们的已知信息；随着存档推进，会显示更多内容。", false],

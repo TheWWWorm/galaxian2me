@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Reference: Characters listed Khador twice. The second entry was a stub page that only linked to his character page; it is removed in every language, along with the faction page's link to it.
+
 ## 0.4.0
 
 - Reference: an illustrated encyclopedia of the imported game, opened from the title menu, the station's Game Options and the flight pause menu. 543 linked, searchable pages: story steps with their briefings, debriefings and radio lines, characters, world and history, the 22 systems and their 100 stations, factions, ships, weapons, equipment, goods, blueprints, agents, freelance jobs, medals and guides. Names, figures, dialogue and pictures come from the supplied JAR; descriptive prose is written for the remake in all 15 interface languages. Story pages and later stations are shown only as far as the furthest save has reached. Pictures: ship and station models in a turnable showroom, the dealer sprites, item icons in their kind frames, portraits, medals, faction emblems and a clickable galaxy map. The reader works with mouse, keyboard, gamepad and touch (LB/RB or Alt+arrows for back and forward). Desktop builds can save the reference as a stand-alone web page.

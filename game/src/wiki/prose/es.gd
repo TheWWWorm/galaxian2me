@@ -61,7 +61,6 @@ const PAGES := {
 	"step/9": {"title": "Ajuste de cuentas"},
 	"world/galaxy": {"title": "La galaxia", "subtitle": "Ambientación", "category": "world", "from": 0},
 	"world/history": {"title": "Historia", "subtitle": "Ambientación", "category": "world", "from": 0},
-	"world/khador": {"title": "Khador", "subtitle": "Personaje", "category": "characters", "from": 32},
 	"world/voids": {"title": "Los Voids", "subtitle": "Ambientación", "category": "world", "from": 0},
 }
 const BLOCKS := {
@@ -223,7 +222,7 @@ const BLOCKS := {
 	],
 	"faction/7": [
 		[0, "", "Los grey son una raza sin sistemas, estaciones ni naves propias. No participan en el comercio ni en el combate.", false],
-		[32, "", "El único grey de la historia es [[character/20]], un científico que colabora con Deep Science; consulta [[world/khador]].", false],
+		[32, "", "El único grey de la historia es [[character/20]], un científico que colabora con Deep Science.", false],
 		[33, "", "Estudia los restos de naves Void y desarrolla a partir de ellos un nuevo tipo de motor.", false],
 	],
 	"faction/8": [
@@ -1557,9 +1556,6 @@ const BLOCKS := {
 		[42, "", "Con refuerzos al mando de [[character/8]], Keith escolta a Errkt a través de un agujero de gusano. Errkt estrella el carguero contra la nave nodriza y muere en el ataque ([[step/41]]).", false],
 		[43, "", "Todos los agujeros de gusano se derrumban y los ataques de los Voids terminan.", false],
 		[45, "Epílogo", "Keith lo celebra con Brent y por fin pasa una noche con Carla. Ella se marcha a la mañana siguiente a otro proyecto secreto, y Keith queda libre para recorrer la galaxia.", false],
-	],
-	"world/khador": [
-		[32, "", "Khador, un científico grey que trabaja para Deep Science, tiene su propia página: consulta [[character/20]].", false],
 	],
 	"world/voids": [
 		[0, "", "Los [[faction/9|Voids]] son la amenaza central de la historia. Esta página recoge lo que se sabe de ellos; aparece más información a medida que avanza tu partida.", false],

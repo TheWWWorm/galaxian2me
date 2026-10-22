@@ -61,7 +61,6 @@ const PAGES := {
 	"step/9": {"title": "Wyrównanie rachunków"},
 	"world/galaxy": {"title": "Galaktyka", "subtitle": "Świat gry", "category": "world", "from": 0},
 	"world/history": {"title": "Historia", "subtitle": "Świat gry", "category": "world", "from": 0},
-	"world/khador": {"title": "Khador", "subtitle": "Postać", "category": "characters", "from": 32},
 	"world/voids": {"title": "Voidy", "subtitle": "Świat gry", "category": "world", "from": 0},
 }
 const BLOCKS := {
@@ -223,7 +222,7 @@ const BLOCKS := {
 	],
 	"faction/7": [
 		[0, "", "Grey to rasa bez własnych układów, stacji i statków. Nie odgrywa żadnej roli w handlu ani w walce.", false],
-		[32, "", "Jedynym przedstawicielem rasy Grey w fabule jest [[character/20]], naukowiec współpracujący z Deep Science; zob. [[world/khador]].", false],
+		[32, "", "Jedynym przedstawicielem rasy Grey w fabule jest [[character/20]], naukowiec współpracujący z Deep Science.", false],
 		[33, "", "Bada szczątki statków Voidów i opracowuje na ich podstawie nowy rodzaj napędu.", false],
 	],
 	"faction/8": [
@@ -1557,9 +1556,6 @@ const BLOCKS := {
 		[42, "", "Ze wsparciem pod dowództwem [[character/8]] Keith eskortuje Errkta przez tunel. Errkt taranuje frachtowcem statek-matkę i ginie w ataku ([[step/41]]).", false],
 		[43, "", "Wszystkie tunele czasoprzestrzenne zapadają się, a najazdy Voidów ustają.", false],
 		[45, "Epilog", "Keith świętuje z Brentem i wreszcie spędza noc z Carlą. Następnego ranka ona wyjeżdża do kolejnego tajnego projektu, a Keith może swobodnie przemierzać galaktykę.", false],
-	],
-	"world/khador": [
-		[32, "", "Khador, naukowiec rasy Grey pracujący dla Deep Science, ma własną stronę: zob. [[character/20]].", false],
 	],
 	"world/voids": [
 		[0, "", "[[faction/9|Voidy]] są głównym zagrożeniem w fabule. Ta strona zbiera to, czego się o nich dowiadujemy; więcej informacji pojawia się wraz z postępem Twojego zapisu.", false],

@@ -61,7 +61,6 @@ const PAGES := {
 	"step/9": {"title": "Menyelesaikan urusan"},
 	"world/galaxy": {"title": "Galaksi", "subtitle": "Latar", "category": "world", "from": 0},
 	"world/history": {"title": "Sejarah", "subtitle": "Latar", "category": "world", "from": 0},
-	"world/khador": {"title": "Khador", "subtitle": "Karakter", "category": "characters", "from": 32},
 	"world/voids": {"title": "Para Void", "subtitle": "Latar", "category": "world", "from": 0},
 }
 const BLOCKS := {
@@ -223,7 +222,7 @@ const BLOCKS := {
 	],
 	"faction/7": [
 		[0, "", "Grey adalah ras tanpa sistem, stasiun, maupun kapal sendiri. Mereka tidak berperan dalam perdagangan atau pertempuran.", false],
-		[32, "", "Satu-satunya Grey dalam cerita adalah [[character/20]], seorang ilmuwan yang bekerja bersama Deep Science; lihat [[world/khador]].", false],
+		[32, "", "Satu-satunya Grey dalam cerita adalah [[character/20]], seorang ilmuwan yang bekerja bersama Deep Science.", false],
 		[33, "", "Ia meneliti sisa-sisa kapal Void dan mengembangkan jenis penggerak baru dari temuannya.", false],
 	],
 	"faction/8": [
@@ -1557,9 +1556,6 @@ const BLOCKS := {
 		[42, "", "Dengan bala bantuan di bawah pimpinan [[character/8]], Keith mengawal Errkt menembus lubang cacing. Errkt menabrakkan kapal barang itu ke kapal induk dan gugur dalam serangan tersebut ([[step/41]]).", false],
 		[43, "", "Semua lubang cacing runtuh dan serbuan para Void pun berakhir.", false],
 		[45, "Epilog", "Keith merayakannya bersama Brent dan akhirnya melewatkan satu malam bersama Carla. Keesokan paginya Carla berangkat untuk proyek rahasia lain, dan Keith bebas menjelajahi galaksi.", false],
-	],
-	"world/khador": [
-		[32, "", "Khador, ilmuwan Grey yang bekerja untuk Deep Science, memiliki halamannya sendiri: lihat [[character/20]].", false],
 	],
 	"world/voids": [
 		[0, "", "[[faction/9|Para Void]] adalah ancaman utama dalam cerita. Halaman ini menghimpun apa yang diketahui tentang mereka; lebih banyak muncul seiring kemajuan simpanan Anda.", false],

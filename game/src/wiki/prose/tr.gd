@@ -61,7 +61,6 @@ const PAGES := {
 	"step/9": {"title": "Hesaplaşma"},
 	"world/galaxy": {"title": "Galaksi", "subtitle": "Evren", "category": "world", "from": 0},
 	"world/history": {"title": "Tarihçe", "subtitle": "Evren", "category": "world", "from": 0},
-	"world/khador": {"title": "Khador", "subtitle": "Karakter", "category": "characters", "from": 32},
 	"world/voids": {"title": "Void'ler", "subtitle": "Evren", "category": "world", "from": 0},
 }
 const BLOCKS := {
@@ -223,7 +222,7 @@ const BLOCKS := {
 	],
 	"faction/7": [
 		[0, "", "Grey'ler, kendi sistemleri, istasyonları ya da gemileri olmayan bir ırktır. Ticarette ya da savaşta hiçbir rol oynamazlar.", false],
-		[32, "", "Hikâyedeki tek Grey, Deep Science ile çalışan bir bilim insanı olan [[character/20]] adlı karakterdir; bkz. [[world/khador]].", false],
+		[32, "", "Hikâyedeki tek Grey, Deep Science ile çalışan bir bilim insanı olan [[character/20]] adlı karakterdir.", false],
 		[33, "", "Void gemilerinin kalıntılarını inceler ve onlardan yeni türde bir sürücü geliştirir.", false],
 	],
 	"faction/8": [
@@ -1557,9 +1556,6 @@ const BLOCKS := {
 		[42, "", "Keith, komutası [[character/8]] adlı subayda olan takviye kuvvetlerle birlikte Errkt'e bir solucan deliğinden geçerken eşlik eder. Errkt yük gemisini ana gemiye çarptırır ve saldırıda hayatını kaybeder ([[step/41]]).", false],
 		[43, "", "Tüm solucan delikleri çöker ve Void baskınları sona erer.", false],
 		[45, "Son söz", "Keith, Brent ile kutlama yapar ve sonunda bir geceyi Carla ile geçirir. Carla ertesi sabah başka bir gizli proje için ayrılır ve Keith galakside dilediği gibi dolaşmakta özgür kalır.", false],
-	],
-	"world/khador": [
-		[32, "", "Deep Science için çalışan Grey bilim insanı Khador'un kendi sayfası vardır: bkz. [[character/20]].", false],
 	],
 	"world/voids": [
 		[0, "", "[[faction/9|Void'ler]] hikâyenin ana tehdididir. Bu sayfa onlar hakkında öğrenilenleri toplar; kaydınız ilerledikçe daha fazlası görünür.", false],

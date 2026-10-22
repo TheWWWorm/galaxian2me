@@ -61,7 +61,6 @@ const PAGES := {
 	"step/9": {"title": "Thanh toán sòng phẳng"},
 	"world/galaxy": {"title": "Thiên hà", "subtitle": "Bối cảnh", "category": "world", "from": 0},
 	"world/history": {"title": "Lịch sử", "subtitle": "Bối cảnh", "category": "world", "from": 0},
-	"world/khador": {"title": "Khador", "subtitle": "Nhân vật", "category": "characters", "from": 32},
 	"world/voids": {"title": "Void", "subtitle": "Bối cảnh", "category": "world", "from": 0},
 }
 const BLOCKS := {
@@ -223,7 +222,7 @@ const BLOCKS := {
 	],
 	"faction/7": [
 		[0, "", "Người Grey là một chủng tộc không có hệ sao, trạm hay tàu riêng. Họ không tham gia vào thương mại hay chiến đấu.", false],
-		[32, "", "Người Grey duy nhất trong cốt truyện là [[character/20]], một nhà khoa học làm việc với Deep Science; xem [[world/khador]].", false],
+		[32, "", "Người Grey duy nhất trong cốt truyện là [[character/20]], một nhà khoa học làm việc với Deep Science.", false],
 		[33, "", "Ông nghiên cứu xác tàu Void và từ đó phát triển một loại động cơ mới.", false],
 	],
 	"faction/8": [
@@ -1557,9 +1556,6 @@ const BLOCKS := {
 		[42, "", "Cùng lực lượng tiếp viện do [[character/8]] chỉ huy, Keith hộ tống Errkt qua một lỗ sâu. Errkt lao tàu chở hàng vào tàu mẹ và hy sinh trong cuộc tấn công ([[step/41]]).", false],
 		[43, "", "Mọi lỗ sâu sụp đổ và các cuộc đột kích của Void chấm dứt.", false],
 		[45, "Phần kết", "Keith ăn mừng cùng Brent và cuối cùng cũng có một đêm bên Carla. Sáng hôm sau cô rời đi để tham gia một dự án bí mật khác, còn Keith được tự do ngao du khắp thiên hà.", false],
-	],
-	"world/khador": [
-		[32, "", "Khador, một nhà khoa học người Grey làm việc cho Deep Science, có trang riêng: xem [[character/20]].", false],
 	],
 	"world/voids": [
 		[0, "", "[[faction/9|Void]] là mối đe dọa trung tâm của cốt truyện. Trang này tập hợp những gì được biết về chúng; nội dung sẽ được bổ sung khi bản lưu của bạn tiến triển.", false],

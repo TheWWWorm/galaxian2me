@@ -61,7 +61,6 @@ const PAGES := {
 	"step/9": {"title": "셈을 치르다"},
 	"world/galaxy": {"title": "은하", "subtitle": "배경", "category": "world", "from": 0},
 	"world/history": {"title": "역사", "subtitle": "배경", "category": "world", "from": 0},
-	"world/khador": {"title": "Khador", "subtitle": "등장인물", "category": "characters", "from": 32},
 	"world/voids": {"title": "Void", "subtitle": "배경", "category": "world", "from": 0},
 }
 const BLOCKS := {
@@ -223,7 +222,7 @@ const BLOCKS := {
 	],
 	"faction/7": [
 		[0, "", "Grey는 자신의 성계도, 정거장도, 함선도 없는 종족이다. 교역이나 전투에는 관여하지 않는다.", false],
-		[32, "", "스토리에 등장하는 유일한 Grey는 Deep Science와 함께 일하는 과학자 [[character/20]](이)다. [[world/khador]] 참고.", false],
+		[32, "", "스토리에 등장하는 유일한 Grey는 Deep Science와 함께 일하는 과학자 [[character/20]](이)다.", false],
 		[33, "", "그는 Void 함선의 잔해를 연구해 새로운 종류의 드라이브를 개발한다.", false],
 	],
 	"faction/8": [
@@ -1557,9 +1556,6 @@ const BLOCKS := {
 		[42, "", "Keith는 [[character/8]]이(가) 이끄는 증원군과 함께 Errkt를 호위하며 웜홀을 통과한다. Errkt는 화물선을 모선에 들이받고 이 공격에서 목숨을 잃는다([[step/41]]).", false],
 		[43, "", "모든 웜홀이 붕괴하고 Void의 습격이 끝난다.", false],
 		[45, "에필로그", "Keith는 Brent와 승리를 축하하고, 마침내 Carla와 하룻밤을 보낸다. 다음 날 아침 그녀는 또 다른 비밀 프로젝트를 위해 떠나고, Keith는 자유롭게 은하를 누비게 된다.", false],
-	],
-	"world/khador": [
-		[32, "", "Deep Science에서 일하는 Grey 과학자 Khador는 별도의 페이지가 있다. [[character/20]] 항목을 참고.", false],
 	],
 	"world/voids": [
 		[0, "", "[[faction/9|Void]]는 스토리의 핵심 위협이다. 이 페이지는 Void에 대해 밝혀진 사실을 모은 것으로, 저장 진행도가 앞서 나갈수록 내용이 늘어난다.", false],

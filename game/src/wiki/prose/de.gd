@@ -61,7 +61,6 @@ const PAGES := {
 	"step/9": {"title": "Abrechnung"},
 	"world/galaxy": {"title": "Die Galaxie", "subtitle": "Hintergrund", "category": "world", "from": 0},
 	"world/history": {"title": "Geschichte", "subtitle": "Hintergrund", "category": "world", "from": 0},
-	"world/khador": {"title": "Khador", "subtitle": "Figur", "category": "characters", "from": 32},
 	"world/voids": {"title": "Die Voids", "subtitle": "Hintergrund", "category": "world", "from": 0},
 }
 const BLOCKS := {
@@ -223,7 +222,7 @@ const BLOCKS := {
 	],
 	"faction/7": [
 		[0, "", "Die Grey sind eine Rasse ohne eigene Systeme, Stationen oder Schiffe. Sie spielen weder im Handel noch im Kampf eine Rolle.", false],
-		[32, "", "Der einzige Grey in der Geschichte ist [[character/20]], ein Wissenschaftler, der mit Deep Science zusammenarbeitet; siehe [[world/khador]].", false],
+		[32, "", "Der einzige Grey in der Geschichte ist [[character/20]], ein Wissenschaftler, der mit Deep Science zusammenarbeitet.", false],
 		[33, "", "Er untersucht die Überreste von Void-Schiffen und entwickelt daraus eine neue Art von Antrieb.", false],
 	],
 	"faction/8": [
@@ -1557,9 +1556,6 @@ const BLOCKS := {
 		[42, "", "Mit Verstärkung unter [[character/8]] eskortiert Keith Errkt durch ein Wurmloch. Errkt rammt den Frachter in das Mutterschiff und stirbt bei dem Angriff ([[step/41]]).", false],
 		[43, "", "Alle Wurmlöcher brechen zusammen, und die Überfälle der Voids enden.", false],
 		[45, "Epilog", "Keith feiert mit Brent und verbringt endlich eine Nacht mit Carla. Am nächsten Morgen bricht sie zu einem anderen Geheimprojekt auf, und Keith kann frei durch die Galaxie ziehen.", false],
-	],
-	"world/khador": [
-		[32, "", "Khador, ein Grey-Wissenschaftler im Dienst von Deep Science, hat eine eigene Seite: siehe [[character/20]].", false],
 	],
 	"world/voids": [
 		[0, "", "Die [[faction/9|Voids]] sind die zentrale Bedrohung der Geschichte. Diese Seite sammelt, was man über sie erfährt; mehr erscheint, während dein Spielstand voranschreitet.", false],
