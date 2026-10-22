@@ -1309,6 +1309,9 @@ func set_paused(on: bool) -> void:
 			f.visible = true
 			(box.get_child(3) as Control).grab_focus.call_deferred())
 		center.add_child(help)))
+	box.add_child(UI.button(tr("Reference"), func():
+		var row: Control = box.get_child(4)
+		app.show_reference(func(): if is_instance_valid(row): row.grab_focus())))
 	# 31: "Are you sure you want to quit?" Unsaved flight progress is lost.
 	box.add_child(UI.button(app.library.text(67), func():
 		UI.ask(pause_layer, app.library.text(31), func(): app.show_title(),

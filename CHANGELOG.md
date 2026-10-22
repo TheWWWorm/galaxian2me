@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0
+
+- Reference: an illustrated encyclopedia of the imported game, opened from the title menu, the station's Game Options and the flight pause menu. 543 linked, searchable pages: story steps with their briefings, debriefings and radio lines, characters, world and history, the 22 systems and their 100 stations, factions, ships, weapons, equipment, goods, blueprints, agents, freelance jobs, medals and guides. Names, figures, dialogue and pictures come from the supplied JAR; descriptive prose is written for the remake in all 15 interface languages. Story pages and later stations are shown only as far as the furthest save has reached. Pictures: ship and station models in a turnable showroom, the dealer sprites, item icons in their kind frames, portraits, medals, faction emblems and a clickable galaxy map. The reader works with mouse, keyboard, gamepad and touch (LB/RB or Alt+arrows for back and forward). Desktop builds can save the reference as a stand-alone web page.
+- A public edition built from the English release is hosted at galaxian2me.wwworm.com/wiki, including 3D renders of every ship and station. Refreshing the hosted Web files keeps it.
+- CJK interface fonts now also cover the reference prose.
+- Title menu: after closing Options, Help or another panel, the first menu button has keyboard and gamepad focus again. Focus went to a button that was being replaced, so nothing was selected.
+
 ## 0.3.0
 
 - Touch throttle: an upright slider beside the fire buttons sets the ship's speed from 0 to 100% in steps of five, as W and S already did on the keyboard. It shows where the throttle is heading and fills as the ship reaches it. It can be moved and resized in the placement editor like the other controls; the booster and autopilot still fly at full.

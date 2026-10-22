@@ -38,6 +38,7 @@ func _main() -> void:
 		p.app = app
 		p.closed.connect(func(): frame.visible = true; _main())
 		add_child(p)))
+	box.add_child(UI.button(tr("Reference"), func(): app.show_reference(_refocus.bind(tr("Reference")))))
 	box.add_child(UI.button(lib.text(67), func(): UI.ask(self, lib.text(31), func(): app.show_title(), _refocus.bind(lib.text(67)))))
 	box.add_child(UI.button(lib.text(65), func(): station.close_panel()))
 	(box.get_child(0) as Control).grab_focus.call_deferred()

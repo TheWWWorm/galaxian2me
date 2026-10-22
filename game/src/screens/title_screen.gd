@@ -114,7 +114,8 @@ func _ask_language(system: String, game_code: String) -> void:
 	first.grab_focus.call_deferred()
 
 func _fill_menu() -> void:
-	for c in menu.get_children(): c.queue_free()
+	# Detached at once, so the focus below goes to a new button, not a dying one.
+	for c in menu.get_children(): menu.remove_child(c); c.queue_free()
 	menu_frame.visible = true
 	var lib = app.library
 	# The original's menu: Start new game, Load game, Options, Help, Exit
@@ -125,6 +126,7 @@ func _fill_menu() -> void:
 	menu.add_child(UI.button(lib.text(1), _load))
 	menu.add_child(UI.button(lib.text(3), _options))
 	menu.add_child(UI.button(lib.text(4), _help))
+	menu.add_child(UI.button(tr("Reference"), _reference))
 	if not OS.has_feature("web"):
 		menu.add_child(UI.button(lib.text(5), func(): get_tree().quit()))
 	if _large_menu():
@@ -240,6 +242,10 @@ func _options() -> void:
 	# A new engine language redraws the title in it.
 	p.closed.connect(func(): app.show_title() if EngineLanguage.current != language else _fill_menu())
 	_show_panel(p)
+
+func _reference() -> void:
+	menu_frame.visible = false
+	app.show_reference(_fill_menu)
 
 func _help() -> void:
 	var p := HelpPanel.new()

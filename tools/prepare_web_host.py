@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Refresh the hosted Web files (public/, parts.json, export-hashes.json) from an
-engine-only Web export.
+engine-only Web export. The hosted reference wiki in public/wiki/ is kept.
 
 The numbered-part approach follows the Apache-2.0 DEEP remake. Original game
 archives and converted resources must never be placed in the exported directory.
@@ -34,8 +34,11 @@ def prepare(source, output):
         raise ValueError('Not a Web export: index.html and index.pck are required')
     public = output / 'public'
     if public.exists():
-        shutil.rmtree(public)
-    public.mkdir(parents=True)
+        for old in public.iterdir():
+            if old.name == 'wiki': continue
+            if old.is_dir() and not old.is_symlink(): shutil.rmtree(old)
+            else: old.unlink()
+    public.mkdir(parents=True, exist_ok=True)
     parts, hashes = {}, {}
     for name in files:
         raw = (source / name).read_bytes()

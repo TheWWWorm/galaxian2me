@@ -71,8 +71,13 @@ def needs_font(character):
     c = ord(character)
     return 0x1100<=c<=0x11ff or 0x2e80<=c<=0x9fff or 0xac00<=c<=0xd7af or 0xf900<=c<=0xfaff or 0xff00<=c<=0xffef
 
+def shown_text(code):
+    """Everything drawn in a language: its catalog and its reference prose."""
+    prose = CODE/'wiki/prose'/f'{code}.gd'
+    return NATIVE_NAMES[code]+''.join(read(code).values())+(prose.read_text(encoding='utf-8') if prose.exists() else '')
+
 def font_characters(code):
-    text = NATIVE_NAMES[code]+''.join(read(code).values())
+    text = shown_text(code)
     return sorted({c for c in text if ord(c)>=0x2000})
 
 def cmap(path):
@@ -106,7 +111,7 @@ def problems():
     for code, (_, name) in FONTS.items():
         if code not in languages(): continue
         covered = cmap(LOCALE/name) if (LOCALE/name).exists() else set()
-        missing = sorted({c for c in NATIVE_NAMES[code]+''.join(read(code).values()) if needs_font(c) and ord(c) not in covered})
+        missing = sorted({c for c in shown_text(code) if needs_font(c) and ord(c) not in covered})
         if missing: found.append(f'{code}: {name} lacks {len(missing)} characters, run fonts: {"".join(missing[:20])}')
     for code in languages():
         catalog = read(code)

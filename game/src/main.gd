@@ -246,6 +246,38 @@ func _swap(next: Node) -> void:
 		fade_tween = create_tween()
 		fade_tween.tween_property(fade, "modulate:a", 0.0, 0.35).set_ease(Tween.EASE_OUT)
 
+## The reference, over whatever is showing, until it is closed. Its story
+## reaches the furthest step of the game in progress and the saves.
+func show_reference(done := Callable()) -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = 20
+	layer.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(layer)
+	var holder := Control.new()
+	holder.theme = ui_theme
+	holder.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	layer.add_child(holder)
+	var shade := ColorRect.new()
+	shade.color = Color(0, 0, 0, 0.75)
+	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	holder.add_child(shade)
+	var panel := preload("res://src/wiki/panel.gd").new()
+	panel.configure(library, reference_limit())
+	panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var m := SafeMargins.margins(get_viewport().get_visible_rect().size, TouchControls.wanted(self))
+	panel.offset_left = m.side + 12; panel.offset_right = -m.side - 12
+	panel.offset_top = m.top + 12; panel.offset_bottom = -m.bottom - 12
+	holder.add_child(panel)
+	panel.closed.connect(func():
+		layer.queue_free()
+		if done.is_valid(): done.call())
+
+func reference_limit() -> int:
+	var furthest := int(game.session.story_step) if game != null else 0
+	for slot in LOAD_SLOTS:
+		furthest = maxi(furthest, int(slot_summary(slot).get("story_step", 0)))
+	return furthest
+
 func show_import(message := "") -> void:
 	stop_music()
 	var s := ImportScreen.new()

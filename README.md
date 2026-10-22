@@ -16,6 +16,10 @@ Captured in the remake at 3840×2160 with content converted from a supplied JAR.
 ![Space Lounge](docs/screenshots/lounge.png)
 ![System map](docs/screenshots/map.png)
 
+## Reference wiki
+
+**[Open the Galaxy on Fire 2 reference at galaxian2me.wwworm.com/wiki](https://galaxian2me.wwworm.com/wiki/)**: an illustrated wiki of the whole game. It covers the story step by step with its briefings and dialogue, the characters, the world and its history, every system and station on the galaxy map, the four factions, ships and stations as 3D pictures, weapons, equipment, goods and blueprints, Space Lounge agents, freelance jobs, medals, and guides to controls, trading, combat, fitting and travel, in fifteen languages. It covers the full story, so it contains spoilers; the in-game [reference](#what-is-there) shows only what your save has reached. The online edition is built from the English release of the game and shows its names, dialogue and art.
+
 ## Download and install
 
 Download the package for your system from the [Releases](https://github.com/TheWWWorm/galaxian2me/releases) page.
@@ -51,6 +55,7 @@ To travel to another system, fly to the jump gate: pick a linked system on the s
 - **Title screen**: the station of your latest save (a random one before your first game) seen along the original's title camera path, with its theme music and the original's menu: Start new game, Load game, Options, Help and Exit (and Resume over a game in progress).
 - **Stations**: the hangar with your ship on its lift pad, laid out as the original's: the station's name and tech level at the top left, the six sections in a list at the bottom left (locked ones marked), the credits at the bottom right and **Depart** on the footer bar. The shop uses the original stock and price rules and shows each item in the original's coloured frame for its kind (primary and secondary weapons, turrets, equipment, goods); you can fit weapons and equipment, buy ships from the dealer, plan routes on the galaxy map, check your status and standing, and save and load.
 - **Flight**: the station and its surroundings as the original lays them out: jump gate, arrival point, asteroid fields whose ores depend on where the station is, local traffic, and freighters and pirates by the system's safety. The original flight model (constant cruise, handling, booster), weapons from the item tables, targeting and lock-on, docking, jump gates and in-system travel are all there.
+- **Reference**: an illustrated encyclopedia of your own imported game, opened from the main menu, the station's Game Options or the pause menu in flight. It describes the story as far as your save has reached, the characters, the world, every system and station with its map, factions, ships and stations as turnable 3D models, items, agents, jobs, medals and guides, with search and links between pages. On desktop it can be saved as a web page.
 - **Story**: missions, dialogue and in-flight radio come from the game's own tables. Scenes the original scripts in code are recreated natively. The campaign plays through to its ending and on into free play.
 
 The engine is still in development. The campaign, free play and every freelance job kind can be played, but not every mission variant, production recipe or wingman situation has been tested, and a JAR without the later chapters' data (see below) ends where the free part of the game did.
