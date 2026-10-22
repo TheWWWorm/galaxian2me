@@ -122,6 +122,24 @@ func _run() -> void:
 	state = controls.state(null)
 	check(state.yaw == 0 and state.pitch == 0 and not state.boost, "all fingers released")
 
+	# The throttle slider: a finger sets the level and dragging moves it, in
+	# steps of five; unchanged levels are not sent again.
+	var track: Rect2 = touch._throttle_track()
+	check(not touch._hit("fire", point("throttle")) and not touch._hit("secondary", point("throttle")), "throttle clear of the fire cluster")
+	check(finger(40, Vector2(track.get_center().x, track.end.y + 4)), "capture throttle finger")
+	check(int(controls.state(null).get("throttle_set", -1)) == 0, "foot of the throttle stops the ship")
+	drag(40, Vector2(track.get_center().x, track.position.y + track.size.y * 0.4))
+	check(int(controls.state(null).get("throttle_set", -1)) == 60, "dragging up to 60%")
+	drag(40, Vector2(track.get_center().x + 3, track.position.y + track.size.y * 0.4))
+	check(not controls.state(null).has("throttle_set"), "an unchanged level is not sent again")
+	drag(40, Vector2(track.get_center().x, track.position.y - 300))
+	check(int(controls.state(null).get("throttle_set", -1)) == 100, "past the top is full throttle")
+	check(touch.fingers.get(40) == "throttle" and touch.stick_id != 40 and touch.look_id != 40, "the throttle finger neither steers nor looks")
+	finger(40, Vector2.ZERO, false)
+	check(finger(41, Vector2(track.get_center().x, track.position.y)) and int(controls.state(null).get("throttle_set", -1)) == 100,
+		"a new touch at the same level is sent again")
+	finger(41, Vector2.ZERO, false)
+
 	for action in ["secondary", "next_target", "autopilot", "fire", "boost"]:
 		finger(1, point(action))
 		finger(1, Vector2.ZERO, false)

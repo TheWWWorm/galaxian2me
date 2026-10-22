@@ -261,6 +261,7 @@ func _physics_process(delta: float) -> void:
 	if touch != null:
 		touch.set_warp(tr("Time ×%d") % space.time_scale if space.time_scale > 1 else (tr("Faster") if space.time_warp_allowed(2) else ""))
 		touch.set_use({"dock": tr("Dock"), "gate": tr("Fly in"), "travel": tr("Travel"), "wormhole": tr("Fly in"), "mine": tr("Mine"), "stop_mining": tr("Stop")}.get(space.target_action(), ""))
+		touch.set_throttle_shown(space.throttle, space.throttle_target)
 		if not touch.use_label.is_empty(): touch.queue_redraw()
 	_follow_combat_music()
 	if space.portal_arriving() or space.using_jump_drive: return

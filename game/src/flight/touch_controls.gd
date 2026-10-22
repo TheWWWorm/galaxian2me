@@ -5,14 +5,14 @@ extends Control
 
 const UI := preload("res://src/presentation/ui.gd")
 const DEAD_ZONE := 0.12
-const LABELS := ["next_target", "autopilot", "rear_view", "secondary", "boost", "fire", "pause", "radio", "action_menu"]
+const LABELS := ["next_target", "autopilot", "rear_view", "secondary", "boost", "fire", "pause", "radio", "action_menu", "throttle"]
 
 ## A button's caption in the engine language.
 func label_for(action: String) -> String:
 	return {"next_target": tr("Target"), "autopilot": tr("Autopilot"),
 		"rear_view": tr("Rear view"), "secondary": tr("Secondary"), "boost": tr("Boost"),
 		"fire": tr("Fire / use"), "pause": tr("Pause"), "radio": tr("Next radio"),
-		"action_menu": tr("Actions")}.get(action, "")
+		"action_menu": tr("Actions"), "throttle": tr("Throttle")}.get(action, "")
 
 signal pause_requested
 signal radio_requested
@@ -39,6 +39,11 @@ var stick_center := Vector2.ZERO
 ## Where the stick rests; a floating stick moves to the thumb and back.
 var stick_home := Vector2.ZERO
 var stick_radius := 92.0
+## The throttle slider's level while a finger sets it (percent), sent once
+## per change; W and S, the autopilot and the booster still move the throttle.
+var throttle_level := -1
+## What the slider shows: the ship's throttle now and where it is heading.
+var throttle_shown := Vector2(100, 100)
 var buttons := {}
 ## Buttons for equipment the ship may lack ("boost", "secondary"): false
 ## hides the button until the equipment is fitted (the flight screen sets it).
@@ -84,6 +89,8 @@ func _ready() -> void:
 
 ## Buttons drawn as text pills rather than round icons.
 const PILLS := ["radio"]
+## Upright sliders, hit by their whole box.
+const SLIDERS := ["throttle"]
 ## The buttons curved around fire, as the iOS release sets them: their
 ## angles about the fire button (degrees, 180 is left, 270 straight up).
 const ARC := {"secondary": [172.0, 206.0], "next_target": [210.0, 244.0], "rear_view": [248.0, 282.0]}
@@ -127,6 +134,10 @@ func _layout() -> void:
 	buttons.fire = round_at.call(fire_c, big)
 	var r0 := big + maxf(5.0, 6.0 * u)
 	var r1 := r0 + maxf(50.0, 54.0 * u)
+	# The throttle stands just left of the arc round fire, its foot level
+	# with fire's, in reach of the same thumb.
+	var slide := Vector2(maxf(48.0, 52.0 * u), maxf(150.0, 190.0 * u))
+	buttons.throttle = Rect2(Vector2(fire_c.x - r1 - gap * 2.0 - slide.x, bottom - slide.y), slide)
 	var mirror := app != null and bool(app.setting("controls", "touch_mirror", false))
 	for action in ARC:
 		var a0 := deg_to_rad(float(ARC[action][0]))
@@ -193,7 +204,7 @@ func _sector_box(sec: Dictionary) -> Rect2:
 ## the arc segments by their curved shape.
 func _hit(action: String, pos: Vector2) -> bool:
 	var r: Rect2 = buttons[action]
-	if action in PILLS: return r.has_point(pos)
+	if action in PILLS or action in SLIDERS: return r.has_point(pos)
 	if sectors.has(action):
 		var sec: Dictionary = sectors[action]
 		var d := pos - Vector2(sec.hub)
@@ -280,6 +291,12 @@ func set_use(label: String) -> void:
 	use_label = label
 	queue_redraw()
 
+func set_throttle_shown(now: float, target: int) -> void:
+	var v := Vector2(roundf(now), target)
+	if throttle_shown == v: return
+	throttle_shown = v
+	queue_redraw()
+
 func set_warp(label: String) -> void:
 	if warp_label == label: return
 	warp_label = label
@@ -292,6 +309,7 @@ func reset() -> void:
 	stick = Vector2.ZERO
 	look_id = -1
 	look = Vector2.ZERO
+	throttle_level = -1
 	if stick_home != Vector2.ZERO: stick_center = stick_home
 	queue_redraw()
 
@@ -362,6 +380,7 @@ func handle_touch(event: InputEvent) -> bool:
 			if not fingers.has(event.index): return false
 			var action: String = fingers[event.index]
 			fingers.erase(event.index)
+			if action == "throttle": throttle_level = -1
 			if event.canceled and not fingers.values().has(action): edges.erase(action)
 			if event.index == stick_id:
 				stick_id = -1
@@ -387,7 +406,8 @@ func handle_touch(event: InputEvent) -> bool:
 			if not _available(action) or not _hit(action, pos): continue
 			var held_elsewhere: bool = fingers.values().has(action)
 			fingers[event.index] = action
-			if action == "pause": pause_requested.emit()
+			if action == "throttle": _move_throttle(pos)
+			elif action == "pause": pause_requested.emit()
 			elif action == "radio": radio_requested.emit()
 			elif action == "fire" and not held_elsewhere and use_label.is_empty() and (_auto_fire_on() or Time.get_ticks_msec() - _last_fire_ms < DOUBLE_TAP_MS):
 				# Double tap: automatic fire on; a tap while it runs: off.
@@ -413,6 +433,8 @@ func handle_touch(event: InputEvent) -> bool:
 		var at: Vector2 = get_global_transform_with_canvas().affine_inverse() * event.position
 		if event.index == stick_id:
 			_move_stick(at)
+		elif fingers[event.index] == "throttle":
+			_move_throttle(at)
 		elif event.index == look_id:
 			var reach := size.y * 0.35 / _look_sensitivity()
 			var v := (at - look_origin) / maxf(1.0, reach)
@@ -452,6 +474,22 @@ func _move_stick(pos: Vector2) -> void:
 	stick = Vector2.ZERO if length <= DEAD_ZONE else raw.normalized() * ((length - DEAD_ZONE) / (1.0 - DEAD_ZONE))
 	queue_redraw()
 
+## The throttle's track inside its box, room left above for the percentage.
+func _throttle_track() -> Rect2:
+	var r: Rect2 = buttons.get("throttle", Rect2())
+	var w := r.size.x * 0.42
+	return Rect2(Vector2(r.get_center().x - w / 2.0, r.position.y + r.size.y * 0.16), Vector2(w, r.size.y * 0.8))
+
+## The level under a finger, in steps of five per cent.
+func _move_throttle(pos: Vector2) -> void:
+	var t := _throttle_track()
+	var v := clampf((t.end.y - pos.y) / maxf(1.0, t.size.y), 0.0, 1.0)
+	var level := int(snappedf(v * 100.0, 5.0))
+	if level == throttle_level: return
+	throttle_level = level
+	edges["throttle_set"] = level
+	queue_redraw()
+
 func sample() -> Dictionary:
 	if not is_visible_in_tree() or not _steering():
 		return {"yaw": 0.0, "pitch": 0.0}
@@ -478,7 +516,9 @@ func _draw() -> void:
 		if not _available(action): continue
 		var rect: Rect2 = buttons[action]
 		var held: bool = fingers.values().has(action) or (editing and (_drag == action or selected == action))
-		if action in PILLS:
+		if action in SLIDERS:
+			_draw_throttle(font, rect, held)
+		elif action in PILLS:
 			var caption: String = label_for(action)
 			if action == "radio" and not radio_label.is_empty() and not editing: caption = radio_label
 			_pill(rect, held)
@@ -504,9 +544,49 @@ func _draw() -> void:
 				var times := warp_label.substr(warp_label.find("×"))
 				draw_string(font, c + Vector2(-r, r + 14), times, HORIZONTAL_ALIGNMENT_CENTER, r * 2.0, 13, INK_LIT)
 
-func _autopilot_on() -> bool:
+func _space():
 	var screen = get_parent()
-	return screen != null and "space" in screen and screen.space != null and bool(screen.space.autopilot)
+	return screen.space if screen != null and "space" in screen and screen.space != null else null
+
+func _autopilot_on() -> bool:
+	var space = _space()
+	return space != null and bool(space.autopilot)
+
+## The throttle: a rounded track filled to the ship's speed, a bar where it
+## is heading and the percentage above.
+func _draw_throttle(font: Font, rect: Rect2, held: bool) -> void:
+	var now := throttle_shown.x
+	var target := throttle_shown.y
+	var t := _throttle_track()
+	var corner := int(t.size.x / 2.0)
+	var box := StyleBoxFlat.new()
+	box.bg_color = GLASS_LIT if held else GLASS
+	box.border_color = UI.TEXT_GOOD if editing and selected == "throttle" else (UI.ACCENT if held else UI.BORDER)
+	box.set_border_width_all(2)
+	box.set_corner_radius_all(corner)
+	box.anti_aliasing = true
+	draw_style_box(box, t)
+	var inner := t.grow(-3.0)
+	var fill := inner.size.y * now / 100.0
+	if fill > 1.0:
+		var bar := StyleBoxFlat.new()
+		bar.bg_color = Color(UI.ACCENT, 0.55 if held else 0.4)
+		bar.set_corner_radius_all(maxi(0, corner - 3))
+		bar.anti_aliasing = true
+		draw_style_box(bar, Rect2(Vector2(inner.position.x, inner.end.y - fill), Vector2(inner.size.x, fill)))
+	for q in [0.25, 0.5, 0.75]:
+		var qy := t.end.y - t.size.y * float(q)
+		draw_line(Vector2(t.position.x - 5.0, qy), Vector2(t.position.x - 1.0, qy), Color(UI.ACCENT, 0.5), 1.5, true)
+	var y := t.end.y - t.size.y * target / 100.0
+	var knob := StyleBoxFlat.new()
+	knob.bg_color = Color(0.22, 0.55, 0.82, 0.95) if held else Color(0.07, 0.24, 0.4, 0.95)
+	knob.border_color = INK_LIT if held else UI.ACCENT
+	knob.set_border_width_all(2)
+	knob.set_corner_radius_all(4)
+	knob.anti_aliasing = true
+	draw_style_box(knob, Rect2(Vector2(rect.position.x + 3.0, y - 5.0), Vector2(rect.size.x - 6.0, 10.0)))
+	var px := int(clampf(rect.size.x * 0.32, 12, 18))
+	draw_string(font, Vector2(rect.position.x - 20.0, t.position.y - 10.0), "%d%%" % int(round(target)), HORIZONTAL_ALIGNMENT_CENTER, rect.size.x + 40.0, px, INK_LIT if held else INK)
 
 ## A round button: dark glass in a blue rim lit from the top left, the
 ## J2ME HUD's icon frames made round.

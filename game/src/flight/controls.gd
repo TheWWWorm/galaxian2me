@@ -220,7 +220,7 @@ func state(view) -> Dictionary:
 	var auto_toggled: bool = _just("auto_fire") or bool(virtual.get("auto_fire", false))
 	if auto_toggled:
 		app.set_setting("controls", "auto_fire", not bool(app.setting("controls", "auto_fire", false)))
-	return {"yaw": yaw, "pitch": pitch, "strafe": strafe, "fire": fire, "fire_pressed": fire_pressed, "secondary": secondary,
+	var out := {"yaw": yaw, "pitch": pitch, "strafe": strafe, "fire": fire, "fire_pressed": fire_pressed, "secondary": secondary,
 		"boost": Input.is_action_pressed("boost") or bool(virtual.get("boost", false)),
 		"throttle": int(Input.get_axis("throttle_down", "throttle_up")),
 		"next_target": _just("next_target") or bool(virtual.get("next_target", false)),
@@ -228,3 +228,5 @@ func state(view) -> Dictionary:
 		"cloak": _just("cloak"), "time_warp": _just("time_warp") or bool(virtual.get("time_warp", false)),
 		"action_menu": _just("action_menu") or bool(virtual.get("action_menu", false)), "map": _just("map") or bool(virtual.get("map", false)),
 		"auto_fire": bool(app.setting("controls", "auto_fire", false)), "auto_fire_toggled": auto_toggled}
+	if virtual.has("throttle_set"): out.throttle_set = int(virtual.throttle_set)
+	return out

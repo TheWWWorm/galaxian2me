@@ -126,6 +126,7 @@ static func apply_display(app) -> void:
 	else:
 		root.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_KEEP
 		root.content_scale_size = Vector2i(int(round(800.0 * aspect)), 800)
+	fit_interface(root, app)
 
 ## Screen orientation (Auto, Landscape, Portrait) as Deep offers it: only an
 ## installed phone or tablet app turns its own screen; a browser tab cannot.
@@ -142,6 +143,37 @@ static func fit_orientation(root: Window) -> void:
 	if root.content_scale_aspect != Window.CONTENT_SCALE_ASPECT_EXPAND: return
 	var want := Vector2i(800, 1280) if is_portrait(root) else Vector2i(1280, 800)
 	if root.content_scale_size != want: root.content_scale_size = want
+	fit_interface(root)
+
+## Interface size: Automatic, or a fixed enlargement of menus, buttons and
+## the HUD. Automatic enlarges on touch screens wider than 16:10, so the
+## long side of a phone is 1280 units as in Deep and a thumb-sized button
+## stays thumb-sized; desktops and tablets keep the canvas as it is.
+const UI_SIZES := [0.0, 1.0, 1.15, 1.3, 1.5]
+static func ui_size_names() -> Array:
+	return [EngineLanguage.translate("Automatic"), "100%", "115%", "130%", "150%"]
+## The canvas never gets smaller than this, on its short and long side, so
+## every screen still fits and lists keep room for their names.
+const MIN_SHORT_SIDE := 560.0
+const MIN_LONG_SIDE := 1100.0
+static var _touch := false
+
+static func fit_interface(root: Window, app = null) -> void:
+	if app != null:
+		_touch = preload("res://src/flight/touch_controls.gd").wanted(app)
+		root.set_meta("ui_size", UI_SIZES[clampi(int(get_value(app, "interface", "ui_size", 0)), 0, UI_SIZES.size() - 1)])
+	var want: float = root.get_meta("ui_size", 0.0)
+	var px := Vector2(root.size)
+	var base := Vector2(root.content_scale_size)
+	if px.x <= 0 or px.y <= 0 or base.x <= 0 or base.y <= 0: return
+	var fitted := minf(px.x / base.x, px.y / base.y)
+	if want <= 0.0:
+		want = 1.0
+		if _touch: want = maxf(px.x, px.y) / 1280.0 / fitted
+	# How far the canvas can shrink before screens overflow.
+	var most := minf(minf(px.x, px.y) / fitted / MIN_SHORT_SIDE, maxf(px.x, px.y) / fitted / MIN_LONG_SIDE)
+	want = clampf(want, 1.0, maxf(1.0, most))
+	if not is_equal_approx(root.content_scale_factor, want): root.content_scale_factor = want
 
 static func is_portrait(root: Window) -> bool:
 	return root.size.y > root.size.x

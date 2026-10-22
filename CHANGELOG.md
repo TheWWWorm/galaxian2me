@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0
+
+- Touch throttle: an upright slider beside the fire buttons sets the ship's speed from 0 to 100% in steps of five, as W and S already did on the keyboard. It shows where the throttle is heading and fills as the ship reaches it. It can be moved and resized in the placement editor like the other controls; the booster and autopilot still fly at full.
+- Options → Interface → Interface size (Automatic, 100%, 115%, 130%, 150%) enlarges menus, buttons, text and the flight display together. Automatic lays a touch screen wider than 16:10 out on 1280 units along its long side, as Deep does, so phone menus are about a third larger than before; desktops and 4:3–16:10 tablets are unchanged. The canvas never gets smaller than 560 units on its short side or 1100 on its long side, so the largest sizes are limited on small windows. The title's large touch menu is sized to fit the enlarged canvas, with a smaller logo on short screens.
+- Mining: the red zones either side of the current layer now show while the drill is off the layer. They are clipped from the supplied red strip at the gauge's position, as the original draws them; the remake took the strip's blank top-left corner instead, so nothing appeared. While mining, the fire hint sits under the gauge instead of over its layers.
+- Opening, step 1: Gunant's ship approaches the drifting wreck nose first. It was spawned with a random heading and slid towards the wreck sideways or backwards.
+
 ## 0.2.2
 
 - Touch controls while mining: the touch overlay treated mining like any other locked manoeuvre and hid every control once the drill took the asteroid, so the drill could not be steered or stopped and always wrecked the rock. While mining, the stick now steers the drill and the fire button (captioned Stop) ends it and keeps the ore; time speed-up and Pause stay available, other flight buttons stay hidden.

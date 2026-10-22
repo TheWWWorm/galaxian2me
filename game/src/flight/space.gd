@@ -892,7 +892,7 @@ func step(delta: float, input: Dictionary) -> void:
 			# The opening's fight is only a fight: no autopilot, map, action
 			# menu, time warp or cloak, as the original's intro allows none.
 			var fight := {}
-			for key in ["yaw", "pitch", "strafe", "throttle", "fire", "fire_pressed", "secondary", "boost", "auto_fire", "auto_fire_toggled"]:
+			for key in ["yaw", "pitch", "strafe", "throttle", "fire", "fire_pressed", "secondary", "boost", "auto_fire", "auto_fire_toggled", "throttle_set"]:
 				if input.has(key): fight[key] = input[key]
 			input = fight
 	if portal_arriving() or starting(): input = {"yaw": 0.0, "pitch": 0.0}
@@ -1026,6 +1026,7 @@ func _fly_player(delta: float, ms: int, input: Dictionary) -> void:
 		if boost_time >= 0:
 			boost_ready = true
 			if int(st.boost_length) > 0: event.emit("message", {"text": lib.text(155)})
+	if input.has("throttle_set") and not autopilot: set_throttle(int(input.throttle_set))
 	_steer_throttle(int(input.get("throttle", 0)), ms)
 	player.speed = boost_speed if player.boosting else PLAYER_SPEED * throttle / 100.0
 	player.pos += player.forward() * player.speed * ms

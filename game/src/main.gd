@@ -101,7 +101,7 @@ func setting(section: String, key: String, fallback = null):
 func set_setting(section: String, key: String, value) -> void:
 	settings.set_value(section, key, value)
 	settings.save("user://settings.cfg")
-	if section == "display": _apply_display_settings()
+	if section == "display" or [section, key] in [["interface", "ui_size"], ["controls", "touch"]]: _apply_display_settings()
 	if section == "audio": _apply_audio()
 	if [section, key] == ["interface", "language"] and apply_language():
 		set_ui_theme(UI.make_theme(Prefs.text_size(self)))

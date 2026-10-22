@@ -332,6 +332,10 @@ func _controls_page() -> void:
 
 func _interface_page() -> void:
 	_new_page("Interface", tr("Interface"))
+	_group(tr("Interface size"))
+	_choice(tr("Interface size"), Prefs.ui_size_names(), clampi(int(app.setting("interface", "ui_size", 0)), 0, Prefs.UI_SIZES.size() - 1), func(i):
+		app.set_setting("interface", "ui_size", i))
+	_note(tr("Menus, buttons, text and the flight display together. Automatic enlarges them on phones; the largest sizes are limited on short screens so every page still fits."))
 	_group(tr("Flight display"))
 	var styles := ["original", "extended"]
 	_choice(tr("Flight display"), [tr("Original"), tr("Extended")], maxi(0, styles.find(str(app.setting("interface", "hud_style", "original")))), func(i):

@@ -34,7 +34,9 @@ func _ready() -> void:
 	column.offset_bottom = -40
 	column.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(column)
-	var logo := UI.picture(app.library.texture("logo"), 3.0)
+	# A short canvas (a phone at a larger interface size) gets a smaller logo
+	# so the whole menu stays on screen.
+	var logo := UI.picture(app.library.texture("logo"), 3.0 if get_viewport_rect().size.y >= 700.0 else 2.4)
 	logo.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	column.add_child(logo)
 	var spacer := Control.new()
@@ -43,11 +45,11 @@ func _ready() -> void:
 	column.add_child(spacer)
 	var frame := UI.Frame.new(app.library.text(67))
 	menu_frame = frame
-	frame.custom_minimum_size = Vector2(520 if _large_menu() else 320, 0)
+	frame.custom_minimum_size = Vector2(maxf(320.0, 520.0 * _large()), 0)
 	frame.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	column.add_child(frame)
 	menu = VBoxContainer.new()
-	menu.add_theme_constant_override("separation", 12 if _large_menu() else 6)
+	menu.add_theme_constant_override("separation", int(maxf(6.0, 12.0 * _large())))
 	frame.add_child(menu)
 	_fill_menu()
 	panel_holder = CenterContainer.new()
@@ -57,10 +59,10 @@ func _ready() -> void:
 	# The engine's own version first, then the supplied game's.
 	var versions := tr("Remake %s  ·  %s %s") % [ProjectSettings.get_setting("application/config/version", ""),
 		app.library.manifest.get("name", ""), app.library.manifest.get("version", "")]
-	var version := UI.label(versions, 20 if _large_menu() else 13, UI.TEXT_DIM)
+	var version := UI.label(versions, int(maxf(13.0, 20.0 * _large())), UI.TEXT_DIM)
 	version.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	version.offset_left = 12
-	version.offset_top = -40 if _large_menu() else -28
+	version.offset_top = -maxf(28.0, 40.0 * _large())
 	version.offset_bottom = -8
 	version.offset_right = 900
 	version.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
@@ -127,14 +129,20 @@ func _fill_menu() -> void:
 		menu.add_child(UI.button(lib.text(5), func(): get_tree().quit()))
 	if _large_menu():
 		for b in menu.get_children():
-			b.add_theme_font_size_override("font_size", 28)
-			b.custom_minimum_size.y = 66
+			b.add_theme_font_size_override("font_size", int(28.0 * _large()))
+			b.custom_minimum_size.y = 66.0 * _large()
 	(menu.get_child(0) as Control).grab_focus.call_deferred()
 
 ## A phone or tablet (or any touch screen) gets a finger-sized main menu: the
 ## 1280 x 800 canvas makes the desktop menu a thumbnail on a small screen.
 func _large_menu() -> bool:
 	return TouchControls.wanted(app) or OS.has_feature("web_android") or OS.has_feature("web_ios")
+
+## The finger-sized menu's scale: 1 at the plain canvas, less where the
+## Interface size already enlarges everything; 0 for the desktop menu.
+func _large() -> float:
+	if not _large_menu(): return 0.0
+	return clampf(1.0 / get_tree().root.content_scale_factor, 0.7, 1.0)
 
 ## The most recently written save slot, or null when there is none.
 func _latest_save():

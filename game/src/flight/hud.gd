@@ -241,8 +241,11 @@ func _draw() -> void:
 		_centered(Vector2(size.x / 2.0, centre.y + 64 * k), tr("TIME ×%d") % space.time_scale, 12, FRIEND, true)
 	var hint := action_hint() if bool(app.setting("interface", "hints", true)) else ""
 	if not hint.is_empty():
-		# Above the crosshair: the original captions landmarks below and right of it.
-		_centered(aim_point(centre) - Vector2(0, 34 * k), hint, 12, Color(UI.TEXT, 0.9), true)
+		# Above the crosshair: the original captions landmarks below and right of
+		# it. While mining, under the gauge and its ore line, clear of the layers.
+		var at := aim_point(centre) - Vector2(0, 34 * k)
+		if space.mining != null: at = Vector2(size.x / 2.0, size.y * MINING_FOOT + 46.0)
+		_centered(at, hint, 12, Color(UI.TEXT, 0.9), true)
 	if bool(app.setting("interface", "hints", true)) and not touch_layout and space.target == null:
 		var four: Array = ["steer_up", "steer_left", "steer_down", "steer_right"].map(func(a): return Prefs.key_name(a))
 		var keys_text: String = "/".join(four)
@@ -1013,6 +1016,9 @@ func _edge_arrow(size: Vector2, edge: Rect2, world: Vector3, color: Color, stron
 		edge_labels.append(box)
 		_text(Vector2(box.get_center().x - 50 * k, box.position.y + h - 3.0 * k), caption, 10, color, 100 * k, HORIZONTAL_ALIGNMENT_CENTER)
 
+## Where the mining gauge stands: its foot, as a share of the screen height.
+const MINING_FOOT := 0.72
+
 ## The mining gauge as the original draws it: the rock layers stacked above
 ## the background, completed layers green, the current layer filling, red
 ## zones either side growing with drill damage, and the cursor.
@@ -1022,7 +1028,7 @@ func _draw_mining(size: Vector2) -> void:
 	if bg == null: return
 	var S := SCALE * 1.5
 	var bs := bg.get_size() * S
-	var origin := Vector2(size.x / 2.0 - bs.x / 2.0, size.y * 0.72)
+	var origin := Vector2(size.x / 2.0 - bs.x / 2.0, size.y * MINING_FOOT)
 	draw_texture_rect(bg, Rect2(origin - Vector2(0, bs.y), bs), false)
 	var empty := _tex("mining_green_empty")
 	var full := _tex("mining_green_complete")
@@ -1043,11 +1049,15 @@ func _draw_mining(size: Vector2) -> void:
 		draw_texture_rect_region(full, Rect2(Vector2(cx - part * S / 2.0, origin.y - (m.layer + 1) * 7.0 * S), Vector2(part, 7) * S),
 			Rect2(full.get_width() / 2.0 - part / 2.0, row_y, part, 7))
 	var row: float = origin.y - m.layer * 7.0 * S
-	if red != null:
+	if red != null and m.red > 0.0:
+		# The phone draws the whole red strip at the board's corner and clips
+		# it to the two growing zones, so each zone shows the strip's pixels
+		# at that spot (its top-left corner is blank).
 		var grow: float = m.red / m.RED_LIMIT * (width + 5)
-		var left: float = origin.x + (bg.get_width() - 2 * m.MARGIN - width * 3) / 2.0 * S
-		draw_texture_rect_region(red, Rect2(Vector2(left + (width - grow) * S, row - 5 * S), Vector2(grow, 5) * S), Rect2(0, 0, grow, 5))
-		draw_texture_rect_region(red, Rect2(Vector2(left + (width * 2 + 2 * m.MARGIN) * S, row - 5 * S), Vector2(grow, 5) * S), Rect2(0, 0, grow, 5))
+		var lx: float = (bg.get_width() - 2 * m.MARGIN - width * 3) / 2.0
+		var src_y: float = red.get_height() - m.layer * 7.0 - 5.0
+		for x in [lx + width - grow, lx + width * 2 + 2 * m.MARGIN]:
+			draw_texture_rect_region(red, Rect2(Vector2(origin.x + x * S, row - 5 * S), Vector2(grow, 5) * S), Rect2(x, src_y, grow, 5))
 	if cursor != null:
 		var cs := cursor.get_size() * S
 		draw_texture_rect(cursor, Rect2(Vector2(size.x / 2.0 + m.drill * S - cs.x / 2.0, row + 2 * S - cs.y), cs), false)

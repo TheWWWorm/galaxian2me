@@ -177,6 +177,9 @@ func _scene_opening() -> void:
 func _scene_rescue() -> void:
 	space.bodies = space.bodies.filter(func(b): return not b.is_ship() or b == space.player)
 	var g := _ship(3, 1, Vector3(300, 50, -8000))
+	# Nose first along +z, the way _run_rescue moves it towards the wreck
+	# (a spawned ship otherwise faces a random direction).
+	g.basis = Basis.IDENTITY
 	g.hostile = false
 	g.friendly = true
 	g.ai.mode = "approach"
